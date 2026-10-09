@@ -39,8 +39,10 @@ function migrate(c) {
     if (fresh && !g.fiche?.edited) g.fiche = { ...clone(dg.fiche || {}), image: g.fiche?.image || '' };
   }
   // supplément teinte : valeur du catalogue (Gen S 56 €, XTRActive 68 €) ; remplace l'ancien forfait provisoire de 59 €
+  if (!c.supplements.precalCode) c.supplements.precalCode = window.PODIUM_DEFAULT.supplements.precalCode;
   for (const t of c.tints) {
     const dt = window.PODIUM_DEFAULT.tints.find(x => x.id === t.id);
+    if (!t.colors && dt?.colors) t.colors = clone(dt.colors);
     if (t.photo && (t.supp === undefined || t.supp === 59)) t.supp = dt?.supp ?? 0;
   }
   return c;
@@ -58,7 +60,7 @@ const blankClient = () => ({
   step: 1, rx: { od: {}, og: {} }, mes: defaultMes(), alt: 'dvo', mixed: false,
   frame: { type: cfg.frames[0]?.id, price: null }, mode: 'auto',
   // blueMat coché par défaut : les verres BUC / EPS sont présentés ; décoché : uniquement les verres sans BUC / EPS
-  opts: { precal: false, blue: false, blueMat: true, blueTr: false, ar: false, arSel: [], photo: false, tint: 'trs', antifatigue: false, boost: null, panierA: false },
+  opts: { precal: false, blue: false, blueMat: true, blueTr: false, ar: false, arSel: [], photo: false, tint: 'trs', color: null, antifatigue: false, boost: null, panierA: false },
   material: 'auto', pos: 0, selected: null,
 });
 let S;
@@ -415,7 +417,7 @@ function renderFilters() {
     tog('ar', 'Anti-reflets', '', S.opts.ar
       ? `<span class="dd"><button type="button" class="dd-btn" id="arBtn">${esc(arLabel)} ▾</button>${arOpen ? `<span class="dd-pop">${shownTr.map(t => `<label><input type="checkbox" data-ar="${t.id}" ${arSel.includes(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')}<button type="button" class="link" id="arAll">Tout afficher</button></span>` : ''}</span>`
       : '<small>Choisir les traitements</small>') +
-    tog('photo', 'Transitions', '', S.opts.photo ? `<select id="tintSel">${photoTints.map(t => `<option value="${t.id}" ${t.id === S.opts.tint ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>` : '<small>Verres photochromiques</small>') +
+    tog('photo', 'Transitions', '', S.opts.photo ? `<span class="sub-opts"><select id="tintSel">${photoTints.map(t => `<option value="${t.id}" ${t.id === S.opts.tint ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>${tintColors().length ? `<select id="colorSel">${tintColors().map(c => `<option ${c.name === curColor()?.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}</span>` : '<small>Verres photochromiques</small>') +
     tog('antifatigue', 'Anti-fatigue', '', S.opts.antifatigue
       ? `<select id="boostSel">${boostLevels().map(b => `<option value="${b}" ${b === curBoost() ? 'selected' : ''}>Boost ${b.replace('.', ',')}</option>`).join('')}</select>`
       : '<small>Eyezen Boost</small>') +
@@ -488,7 +490,7 @@ function cardHTML(o, i) {
       <div class="spec">
         <div class="m">${esc(o.mat.name)} ${o.classA ? 'indice ' : ''}${o.mat.index}</div>
         <div class="t">${esc(o.tr.name)}</div>
-        ${tint?.photo ? `<div class="tn">${esc(tint.name)}</div>` : ''}
+        ${tint?.photo ? `<div class="tn">${esc(tint.name)}${curColor() ? ' · ' + esc(curColor().name) : ''}</div>` : ''}
       </div>
       <button class="link more" data-more="${esc(o.key)}">En savoir plus →</button>
     </div>
@@ -547,7 +549,7 @@ function renderSummary() {
     : `2 verres (2 × ${eur(o.price)} €)`;
   $('#summary').innerHTML = `
     <div class="sel-name"><small>Équipement</small>${o
-      ? `<b>${esc(o.g.name)}${o.unif ? ' + ' + esc(o.unif.g.name) : ''}</b><em>${esc(o.mat.name)} ${o.mat.index}${o.filt ? ' ' + esc(filtName(o.filt)) : ''} · ${esc(o.tr.name)}${tint?.photo ? ' · ' + esc(tint.name) : ''}${o.precal ? ' · Précal' : ''}</em>`
+      ? `<b>${esc(o.g.name)}${o.unif ? ' + ' + esc(o.unif.g.name) : ''}</b><em>${esc(o.mat.name)} ${o.mat.index}${o.filt ? ' ' + esc(filtName(o.filt)) : ''} · ${esc(o.tr.name)}${tint?.photo ? ' · ' + esc(tint.name) + (curColor() ? ' ' + esc(curColor().name) : '') : ''}${o.precal ? ' · Précal' : ''}</em>`
       : '<b>Sélectionnez un verre</b><em>Cliquez sur une vignette du podium</em>'}</div>
     <div class="amt"><small>Monture ${esc(frameDef()?.name || '')}${isClassAFrame() ? ' · Classe A' : ''}</small><b>${frame != null ? eur(frame) + ' €' : '—'}</b></div>
     <span class="op">+</span>
@@ -588,24 +590,33 @@ function fromMeo(d) {
   toast('Correction et prix monture reçus de MyEasyOptic');
 }
 // Libellé MyEasyOptic du verre de chaque œil
+// Verre de chaque œil pour MyEasyOptic : libellé exact et code EDI
 function meoLabels(o) {
   if (o.classA) {
     const idx = { 1.5: '1.5', 1.59: 'PC', 1.67: '1.67', 1.74: '1.74' };
-    const lab = e => `Economic ${e.prog ? 'Prog' : 'Unifocal'} ${idx[e.index] || e.index} HMC`;
+    const lab = e => ({ lab: `Economic ${e.prog ? 'Prog' : 'Unifocal'} ${idx[e.index] || e.index} HMC`, code: '' });
     return { od: lab(o.eyes[0]), og: lab(o.eyes[1]) };
   }
-  const main = o.g.prices[`${o.mat.id}|${o.filt}|${o.tr.id}|${o.tint}`]?.lab || o.g.name;
+  const ref = (g, key) => ({ lab: g.prices[key]?.lab || g.name, code: g.prices[key]?.code || '' });
+  const main = ref(o.g, `${o.mat.id}|${o.filt}|${o.tr.id}|${o.tint}`);
   if (!o.unif) return { od: main, og: main };
-  const other = o.unif.g.prices[o.unif.key]?.lab || o.unif.g.name;
+  const other = ref(o.unif.g, o.unif.key);
   return progEye() === 'od' ? { od: main, og: other } : { od: other, og: main };
 }
+const tintColors = () => cfg.tints.find(t => t.id === S.opts.tint)?.colors || [];
+const curColor = () => { const l = tintColors(); return l.find(c => c.name === S.opts.color) || l[0] || null; };
 function sendToMeo() {
   const o = current.find(x => x.key === S.selected);
   if (!o || !meo || meo.closed) return toast("MyEasyOptic n'est plus ouvert : relancez le bouton « → Podium » depuis le devis.");
   const l = meoLabels(o);
-  meo.postMessage({ type: 'podium-verres', od: l.od, og: l.og, precal: !!o.precal }, MEO_ORIGIN);
+  // suppléments à cocher dans MyEasyOptic après le choix du diamètre : Précal, couleur de teinte Transitions
+  const supps = [];
+  if (o.precal && cfg.supplements.precalCode) supps.push({ code: cfg.supplements.precalCode, name: 'Précal' });
+  const tint = cfg.tints.find(t => t.id === o.tint);
+  if (tint?.photo && curColor()) supps.push({ code: curColor().code, name: `${tint.name} ${curColor().name}` });
+  meo.postMessage({ type: 'podium-verres', v: 2, od: l.od.lab, og: l.og.lab, odCode: l.od.code, ogCode: l.og.code, supps, precal: !!o.precal }, MEO_ORIGIN);
   try { meo.focus(); } catch (e) {}
-  toast(`Envoyé : ${l.od}${l.og !== l.od ? ' / ' + l.og : ''}`);
+  toast(`Envoyé : ${l.od.lab}${l.og.lab !== l.od.lab ? ' / ' + l.og.lab : ''}${supps.length ? ' + ' + supps.map(s => s.name).join(', ') : ''}`);
 }
 
 /* ---------- Navigation entre étapes ---------- */
@@ -842,7 +853,8 @@ function bindMain() {
   $('#ctrlMini').onclick = () => setCollapsed(false);
   $('#optToggles').addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && e.target.dataset.opt) { e.preventDefault(); e.target.click(); } });
   $('#optToggles').addEventListener('change', e => {
-    if (e.target.id === 'tintSel') S.opts.tint = e.target.value;
+    if (e.target.id === 'tintSel') { S.opts.tint = e.target.value; renderFilters(); }
+    if (e.target.id === 'colorSel') S.opts.color = e.target.value;
     if (e.target.id === 'boostSel') S.opts.boost = e.target.value;
     if (e.target.dataset.chk) S.opts[e.target.dataset.chk] = e.target.checked;
     if (e.target.dataset.ar) {
