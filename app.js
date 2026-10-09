@@ -616,6 +616,8 @@ function sendToMeo() {
   if (tint?.photo && curColor()) supps.push({ code: curColor().code, name: `${tint.name} ${curColor().name}` });
   meo.postMessage({ type: 'podium-verres', v: 2, od: l.od.lab, og: l.og.lab, odCode: l.od.code, ogCode: l.og.code, supps, precal: !!o.precal }, MEO_ORIGIN);
   try { meo.focus(); } catch (e) {}
+  // Podium a été ouvert par MyEasyOptic : on referme l'onglet (sans effet si Podium a été ouvert à la main)
+  setTimeout(() => window.close(), 600);
   toast(`Envoyé : ${l.od.lab}${l.og.lab !== l.od.lab ? ' / ' + l.og.lab : ''}${supps.length ? ' + ' + supps.map(s => s.name).join(', ') : ''}`);
 }
 
