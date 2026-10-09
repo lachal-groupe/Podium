@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Podium L4C84L</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=68db4f1b75">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div><div class="brand-name">Podium <b>L4C84L</b></div><div class="brand-sub">Présentation des verres</div></div>
+  </div>
+  <nav class="top-actions">
+    <div class="seg" id="modeSeg" role="radiogroup" aria-label="Type de verre">
+      <button data-mode="auto" class="on">Auto</button>
+      <button data-mode="unif">Unifocal</button>
+      <button data-mode="prog">Progressif</button>
+    </div>
+    <button class="btn ghost" id="btnReset" title="Effacer la fiche client">↺ Nouveau client</button>
+    <button class="btn ghost icon" id="btnAdmin" title="Paramètres">⚙</button>
+    <button class="btn ghost icon" id="btnLogout" hidden>⏻</button>
+  </nav>
+</header>
+
+<div id="updateBanner" class="banner" hidden></div>
+
+<!-- Étape 1 : saisie -->
+<main id="stepInput" class="entry">
+  <section class="panel">
+    <div class="panel-h"><h2><span class="step-num">1</span> Correction</h2><button class="link" id="copyOD">Copier OD → OG</button></div>
+    <div class="rx">
+      <div></div><label>Sphère</label><label>Cylindre</label><label>Axe</label><label>Addition</label>
+      <span class="eye">OD</span>
+      <input data-rx="od.sph" inputmode="decimal" placeholder="0,00">
+      <input data-rx="od.cyl" inputmode="decimal" placeholder="0,00">
+      <input data-rx="od.axe" inputmode="numeric" placeholder="0°">
+      <input data-rx="od.add" inputmode="decimal" placeholder="—">
+      <span class="eye">OG</span>
+      <input data-rx="og.sph" inputmode="decimal" placeholder="0,00">
+      <input data-rx="og.cyl" inputmode="decimal" placeholder="0,00">
+      <input data-rx="og.axe" inputmode="numeric" placeholder="0°">
+      <input data-rx="og.add" inputmode="decimal" placeholder="—">
+    </div>
+    <label class="mixed" id="mixedBox" hidden><input type="checkbox" id="mixedChk"> <span id="mixedTxt">Confirmer équipement progressif / unifocal ?</span></label>
+    <div class="rx-info" id="rxInfo"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-h"><h2><span class="step-num">2</span> Mesures</h2>
+      <div class="seg" id="altSeg"><button data-alt="dvo" class="on">DVO</button><button data-alt="cro">CRO</button></div></div>
+    <div class="mes" id="mesGrid"></div>
+    <div class="verdict" id="fitVerdict"></div>
+  </section>
+
+  <section class="panel frame-panel">
+    <h2><span class="step-num">3</span> Monture</h2>
+    <div class="seg" id="frameSeg"></div>
+    <label class="money"><input id="framePrice" inputmode="decimal" placeholder="Prix de la monture"><b>€</b></label>
+    <div class="frame-note" id="frameNote"></div>
+  </section>
+
+  <div class="entry-go"><button class="btn primary big" id="btnGo">Voir les verres <span>→</span></button></div>
+</main>
+
+<!-- Étape 2 : podium -->
+<main id="stepPodium" class="stage" hidden>
+  <button class="recap" id="recap" title="Modifier la correction, les mesures ou la monture"></button>
+
+  <div class="controls">
+    <button class="controls-mini" id="ctrlMini" title="Afficher les options"></button>
+    <div class="filters"><div class="toggles" id="optToggles"></div></div>
+    <div class="lens-panel" id="lensPanel"></div>
+  </div>
+
+  <div class="podium">
+    <div class="podium-head">
+      <h2 id="podiumTitle">Verres</h2>
+      <span class="count" id="podiumCount"></span>
+    </div>
+    <div class="carousel">
+      <button class="arrow left" id="prev" aria-label="Verres précédents">‹</button>
+      <div class="viewport" id="viewport"><div class="track" id="track"></div></div>
+      <button class="arrow right" id="next" aria-label="Verres suivants">›</button>
+    </div>
+    <div class="dots" id="dots"></div>
+  </div>
+
+  <div class="summary" id="summary"></div>
+</main>
+
+<main id="viewAdmin" class="admin" hidden></main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-back" data-close></div>
+  <div class="modal-box" role="dialog" aria-modal="true"><div id="modalBody"></div></div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<div class="login" id="login" hidden>
+  <form class="login-box" id="loginForm" autocomplete="off">
+    <div class="brand-mark big" aria-hidden="true"><span></span><span></span><span></span></div>
+    <h1>Podium <b>L4C84L</b></h1>
+    <p class="sub">Accès réservé</p>
+    <input type="password" id="loginPw" placeholder="Mot de passe" autocomplete="current-password" aria-label="Mot de passe">
+    <label class="keep"><input type="checkbox" id="loginKeep"> Rester connecté sur ce poste</label>
+    <button class="btn primary big" id="loginBtn" type="submit">Entrer</button>
+    <p class="login-msg" id="loginMsg"></p>
+  </form>
+</div>
+
+<script src="data.enc.js?v=68db4f1b75"></script>
+<script src="app.js?v=68db4f1b75"></script>
+<script src="admin.js?v=68db4f1b75"></script>
+</body>
+</html>
