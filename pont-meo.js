@@ -38,19 +38,42 @@
       el.blur();
     };
     set(od, d.od); set(og, d.og);
+    // boutons MyEasyOptic (GWT) : ils réagissent à l'appui souris (mousedown / mouseup), pas au simple clic
+    const press = el => {
+      const r = el.getBoundingClientRect(), o = { bubbles: true, cancelable: true, view: window, clientX: r.left + 5, clientY: r.top + 5, button: 0 };
+      ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(t => el.dispatchEvent(new MouseEvent(t, o)));
+    };
+    // Précalibrage : la case n'est active qu'une fois le verre sélectionné ; on la coche au retour sur le devis (3 min max)
     if (d.precal) {
-      const lab = [...document.querySelectorAll('label')].find(l => l.textContent.trim() === 'Précalibrage' && l.offsetParent);
-      const cb = lab && (document.getElementById(lab.htmlFor) || lab.parentElement.querySelector('input[type=checkbox]'));
-      if (cb && !cb.checked) cb.click();
+      let k = 0;
+      const p = setInterval(() => {
+        const lab = [...document.querySelectorAll('label')].find(l => l.textContent.trim() === 'Précalibrage' && l.offsetParent);
+        const cb = lab && document.getElementById(lab.htmlFor);
+        if (cb && !cb.disabled) { if (!cb.checked) cb.click(); note('Précalibrage coché.', true); clearInterval(p); }
+        if (++k > 360) clearInterval(p);
+      }, 500);
     }
     window.focus();
     od.scrollIntoView({ block: 'center' });
     setTimeout(() => {
       const r = od.getBoundingClientRect();
-      const loupe = document.elementFromPoint(r.left - 14, r.top + r.height / 2);
-      const fin = d.od === d.og ? 'cliquez sur la ligne exacte, choisissez le diamètre puis OK.' : 'OD et OG sont différents : sélectionnez chaque œil, puis OK.';
-      if (loupe && loupe !== od) { loupe.click(); note('Verres Podium collés : ' + fin, true); }
-      else note('Verres Podium collés : cliquez sur la loupe, puis ' + fin, true);
+      const img = document.elementFromPoint(r.left - 14, r.top + r.height / 2);
+      const loupe = img && img.closest('[role=button]');
+      if (!loupe) return note('Verres Podium collés : cliquez sur la loupe pour les sélectionner.', true);
+      press(loupe);
+      // Sélection Verre : on présélectionne la ligne exacte (même libellé que dans Podium)
+      let k = 0;
+      const t = setInterval(() => {
+        const cell = [...document.querySelectorAll('div, td')].find(e => e.offsetParent && e.childElementCount === 0 && e.textContent.trim() === d.od && e.getBoundingClientRect().top > 180);
+        if (cell) { clearInterval(t); press(cell); }
+        if (cell || ++k > 20) {
+          const precal = d.precal ? ' Le Précalibrage sera coché au retour sur le devis.' : '';
+          note(d.od === d.og
+            ? (cell ? 'Verre présélectionné : choisissez le diamètre puis OK.' : 'Cliquez sur la ligne exacte, choisissez le diamètre puis OK.') + precal
+            : 'OD et OG sont différents : sélectionnez chaque œil, choisissez le diamètre puis OK.' + precal, true);
+          clearInterval(t);
+        }
+      }, 300);
     }, 250);
   };
 
