@@ -413,4 +413,6 @@ input,select,textarea{font:inherit;color:inherit}
 .login-msg{margin:0;min-height:20px;font-size:13px;color:var(--ink-3)}
 .login-msg.err{color:#c13246;font-weight:600}
 body[data-profile="user"] #btnAdmin{opacity:.5}
+.summary .send-meo{background:#fff;color:var(--brand-2);border:0;font-weight:800;font-size:12.5px;line-height:1.2;padding:8px 14px;border-radius:12px;text-align:left}
+.summary .send-meo:hover{background:#ffe08a}
 @media print{.topbar,.filters,.arrow,.dots,.card-f{display:none}}

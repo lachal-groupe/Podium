@@ -35,6 +35,7 @@ function migrate(c) {
     if (g.keywords === undefined) g.keywords = dg.keywords || '';
     if (!g.base && dg.base) g.base = dg.base;
     if (g.fiche && !g.fiche.images) g.fiche.images = clone(dg.fiche?.images || []);
+    for (const [k, p] of Object.entries(g.prices)) if (!p.lab && dg.prices[k]?.lab) p.lab = dg.prices[k].lab;
     if (fresh && !g.fiche?.edited) g.fiche = { ...clone(dg.fiche || {}), image: g.fiche?.image || '' };
   }
   // supplément teinte : valeur du catalogue (Gen S 56 €, XTRActive 68 €) ; remplace l'ancien forfait provisoire de 59 €
@@ -200,12 +201,12 @@ function unifPrice(mat, filt, tr, tint) {
   const pick = g => bestFilt(g, mat, tr, tint, [filt]) || bestFilt(g, mat, tr, tint);
   const ref = cfg.gammes.find(g => g.id === cfg.mixedUnifGamme);
   const r = ref && pick(ref);
-  if (r) return { g: ref, p: r.p };
+  if (r) return { g: ref, p: r.p, f: r.f };
   let best = null;
   for (const g of cfg.gammes) {
     if (g.type !== 'unif' || g.fit || !g.enabled) continue;
     const q = pick(g);
-    if (q && (!best || q.p < best.p)) best = { g, p: q.p };
+    if (q && (!best || q.p < best.p)) best = { g, p: q.p, f: q.f };
   }
   return best;
 }
@@ -275,7 +276,7 @@ function offers() {
       if (!mat) continue;
       const filt = v.f;
       const o = { key: `${g.id}|${mat.id}|${filt}|${tr.id}|${tint}`, g, mat, filt, tr, tint, precal, price: v.p + supp };
-      if (mixed) { const u = unifPrice(mat.id, filt, tr.id, tint); o.unif = u ? { g: u.g, price: u.p + supp } : null; }
+      if (mixed) { const u = unifPrice(mat.id, filt, tr.id, tint); o.unif = u ? { g: u.g, price: u.p + supp, key: `${mat.id}|${u.f}|${tr.id}|${tint}` } : null; }
       o.pair = mixed ? (o.unif ? o.price + o.unif.price : null) : o.price * 2;
       out.push(o);
     }
@@ -552,7 +553,59 @@ function renderSummary() {
     <span class="op">+</span>
     <div class="amt"><small>${lensLabel}</small><b>${lenses != null ? eur(lenses) + ' €' : '—'}</b></div>
     <span class="op">=</span>
+    ${o && meo && !meo.closed ? '<button class="btn send-meo" id="sendMeo" title="Coller le libellé des verres dans le devis MyEasyOptic">Envoyer dans<br>MyEasyOptic →</button>' : ''}
     <div class="amt total"><small>Total</small><b>${frame != null || lenses != null ? eur(total) + ' €' : '—'}</b></div>`;
+}
+
+/* ---------- Pont MyEasyOptic ----------
+   Le bouton « → Podium » (pont-meo.js, barre de favoris) envoie la correction et le prix monture du devis ouvert ;
+   « Envoyer dans MyEasyOptic » renvoie le libellé exact des verres choisis. Échange direct entre onglets, sans serveur. */
+const MEO_ORIGIN = 'https://hds.myeasyoptic.com';
+let meo = null, meoLast = null;
+window.addEventListener('message', e => {
+  if (e.origin !== MEO_ORIGIN || e.data?.type !== 'podium-client' || !cfg) return; // pas encore connecté : le pont réessaie
+  meo = e.source;
+  meo.postMessage({ type: 'podium-ack', id: e.data.id }, MEO_ORIGIN);
+  if (meoLast === e.data.id) return;
+  meoLast = e.data.id;
+  fromMeo(e.data);
+});
+function fromMeo(d) {
+  resetClient();
+  for (const e of ['od', 'og']) {
+    for (const f of ['sph', 'cyl', 'axe', 'add']) {
+      const v = (d.rx?.[e]?.[f] || '').replace(/°/g, '');
+      const inp = $(`[data-rx="${e}.${f}"]`);
+      S.rx[e][f] = v; inp.value = v;
+      if (!checkRx(inp)) inp.value = fmtRx(f, v);
+    }
+    transpose(e);
+  }
+  const price = num(d.framePrice);
+  S.frame.price = price == null ? null : String(price);
+  $('#framePrice').value = price == null ? '' : eur(price);
+  renderEntry();
+  toast('Correction et prix monture reçus de MyEasyOptic');
+}
+// Libellé MyEasyOptic du verre de chaque œil
+function meoLabels(o) {
+  if (o.classA) {
+    const idx = { 1.5: '1.5', 1.59: 'PC', 1.67: '1.67', 1.74: '1.74' };
+    const lab = e => `Economic ${e.prog ? 'Prog' : 'Unifocal'} ${idx[e.index] || e.index} HMC`;
+    return { od: lab(o.eyes[0]), og: lab(o.eyes[1]) };
+  }
+  const main = o.g.prices[`${o.mat.id}|${o.filt}|${o.tr.id}|${o.tint}`]?.lab || o.g.name;
+  if (!o.unif) return { od: main, og: main };
+  const other = o.unif.g.prices[o.unif.key]?.lab || o.unif.g.name;
+  return progEye() === 'od' ? { od: main, og: other } : { od: other, og: main };
+}
+function sendToMeo() {
+  const o = current.find(x => x.key === S.selected);
+  if (!o || !meo || meo.closed) return toast("MyEasyOptic n'est plus ouvert : relancez le bouton « → Podium » depuis le devis.");
+  const l = meoLabels(o);
+  meo.postMessage({ type: 'podium-verres', od: l.od, og: l.og, precal: !!o.precal }, MEO_ORIGIN);
+  try { meo.focus(); } catch (e) {}
+  toast(`Envoyé : ${l.od}${l.og !== l.od ? ' / ' + l.og : ''}`);
 }
 
 /* ---------- Navigation entre étapes ---------- */
@@ -830,6 +883,7 @@ function bindMain() {
   window.addEventListener('resize', () => S.step === 2 && current.length && layoutCarousel());
   $('#modal').addEventListener('click', e => { if (e.target.closest('[data-close]')) closeModal(); });
   $('#btnReset').onclick = resetClient;
+  $('#summary').addEventListener('click', e => { if (e.target.closest('#sendMeo')) sendToMeo(); });
   $('#btnAdmin').onclick = () => location.hash = '#parametres';
 }
 

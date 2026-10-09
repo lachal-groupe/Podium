@@ -412,7 +412,7 @@
       const key = `${slug(p.mat)}|${p.filt}|${slug(p.tr)}|${p.tint}`;
       if (g.prices[key] && g.prices[key].pv <= pv) continue;
       const pa = r[C.pa];
-      g.prices[key] = { pv, ...(typeof pa === 'number' ? { pa } : {}), code: String(r[C.code] ?? '') };
+      g.prices[key] = { pv, ...(typeof pa === 'number' ? { pa } : {}), code: String(r[C.code] ?? ''), lab: String(r[C.lab] ?? '').trim() }; // lab : libellé exact MyEasyOptic
       g.trs[slug(p.tr)] = p.tr;
     }
     return out;
