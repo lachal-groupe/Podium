@@ -58,7 +58,7 @@ input,select,textarea{font:inherit;color:inherit}
 .hint{font-size:11.5px;color:var(--ink-3)}
 
 /* Prescription */
-.rx{display:grid;grid-template-columns:44px repeat(4,1fr);gap:10px 12px;align-items:center}
+.rx{display:grid;grid-template-columns:44px repeat(4,1fr) repeat(2,.75fr);gap:10px 12px;align-items:center}
 .rx label{font-size:11.5px;color:var(--ink-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;text-align:center}
 .eye{font-weight:800;font-size:14px;color:var(--brand)}
 .rx input{font-size:18px;padding:12px 8px}

@@ -39,10 +39,10 @@ function migrate(c) {
     if (fresh && !g.fiche?.edited) g.fiche = { ...clone(dg.fiche || {}), image: g.fiche?.image || '' };
   }
   // supplément teinte : valeur du catalogue (Gen S 56 €, XTRActive 68 €) ; remplace l'ancien forfait provisoire de 59 €
-  if (!c.supplements.precalCode) c.supplements.precalCode = window.PODIUM_DEFAULT.supplements.precalCode;
+  for (const k of ['precalCode', 'prism', 'prismCode']) if (c.supplements[k] == null) c.supplements[k] = window.PODIUM_DEFAULT.supplements[k];
   for (const t of c.tints) {
     const dt = window.PODIUM_DEFAULT.tints.find(x => x.id === t.id);
-    if (!t.colors && dt?.colors) t.colors = clone(dt.colors);
+    if (dt?.colors && (!t.colors || t.colors.some(c => !c.lib))) t.colors = clone(dt.colors);
     if (t.photo && (t.supp === undefined || t.supp === 59)) t.supp = dt?.supp ?? 0;
   }
   return c;
@@ -309,6 +309,8 @@ function rxError(field, v) {
   if (field === 'axe') return !Number.isInteger(n) || n < 0 || n > 180 ? "L'axe va de 0 à 180°" : null;
   if (field === 'sph') return Math.abs(n) > 25 ? 'La sphère va de −25,00 à +25,00' : step ? 'La sphère se saisit par pas de 0,25' : null;
   if (field === 'cyl') return Math.abs(n) > 6 ? 'Le cylindre va de −6,00 à +6,00' : step ? 'Le cylindre se saisit par pas de 0,25' : null;
+  if (field === 'prism') return n < 0.5 || n > 12 ? 'Le prisme va de 0,50 à 12,00' : step ? 'Le prisme se saisit par pas de 0,25' : null;
+  if (field === 'base') return !Number.isInteger(n) || n < 1 || n > 360 ? 'La base du prisme va de 1 à 360°' : null;
   if (field === 'add') return n < 0 ? "L'addition est toujours positive" : n > 4 ? "L'addition ne dépasse pas +4,00" : step ? "L'addition se saisit par pas de 0,25" : null;
   return null;
 }
@@ -325,7 +327,8 @@ function rxErrors() { return $$('[data-rx]').map(i => i.title && i.classList.con
 function fmtRx(field, v) {
   const n = num(v);
   if (n == null) return '';
-  if (field === 'axe') return Math.round(n) + '°';
+  if (field === 'axe' || field === 'base') return Math.round(n) + '°';
+  if (field === 'prism') return Math.abs(n).toFixed(2).replace('.', ',');
   return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(2).replace('.', ',');
 }
 const eyeName = e => e === 'od' ? 'OD' : 'OG';
@@ -389,6 +392,7 @@ function renderRecap() {
     const parts = [fmtRx('sph', r.sph) || '0,00'];
     if (num(r.cyl)) parts.push(`(${fmtRx('cyl', r.cyl)}) ${fmtRx('axe', r.axe) || '0°'}`);
     if (addOf(e) > 0) parts.push(`Add ${fmtRx('add', r.add)}`);
+    if (num(r.prism)) parts.push(`Prisme ${fmtRx('prism', r.prism)} base ${fmtRx('base', r.base) || '—'}`);
     return `<span><i>${eyeName(e)}</i>${parts.join(' ')}</span>`;
   };
   const mes = visibleMes().filter(m => num(S.mes[m.id]) != null && !isDefault(m)).map(m => `${esc(m.name)} ${String(S.mes[m.id]).replace('.', ',')}`);
@@ -540,20 +544,23 @@ function move(d) { S.pos += d; layoutCarousel(); }
 function renderSummary() {
   const o = current.find(x => x.key === S.selected);
   const frame = num(S.frame.price);
-  const lenses = o ? o.pair : null;
+  const prisms = o && !o.classA ? prismEyes() : [];
+  const prismCost = prisms.length * (+cfg.supplements.prism || 0);
+  const lenses = o ? o.pair + prismCost : null;
   const total = (frame || 0) + (lenses || 0);
   const tint = o && cfg.tints.find(t => t.id === o.tint);
   const pe = eyeName(progEye()), ue = eyeName(progEye() === 'od' ? 'og' : 'od');
   const lensLabel = !o ? '2 verres' : o.classA ? `Verres OD ${eur(o.eyes[0].price)} € + OG ${eur(o.eyes[1].price)} €` : o.unif !== undefined
     ? `Progressif ${pe} ${eur(o.price)} € + unifocal ${ue} ${o.unif ? eur(o.unif.price) + ' €' : '—'}`
     : `2 verres (2 × ${eur(o.price)} €)`;
+  const lensLabelFull = lensLabel + (prismCost ? ` + prisme ${prisms.map(eyeName).join('/')} ${eur(prismCost)} €` : '');
   $('#summary').innerHTML = `
     <div class="sel-name"><small>Équipement</small>${o
       ? `<b>${esc(o.g.name)}${o.unif ? ' + ' + esc(o.unif.g.name) : ''}</b><em>${esc(o.mat.name)} ${o.mat.index}${o.filt ? ' ' + esc(filtName(o.filt)) : ''} · ${esc(o.tr.name)}${tint?.photo ? ' · ' + esc(tint.name) + (curColor() ? ' ' + esc(curColor().name) : '') : ''}${o.precal ? ' · Précal' : ''}</em>`
       : '<b>Sélectionnez un verre</b><em>Cliquez sur une vignette du podium</em>'}</div>
     <div class="amt"><small>Monture ${esc(frameDef()?.name || '')}${isClassAFrame() ? ' · Classe A' : ''}</small><b>${frame != null ? eur(frame) + ' €' : '—'}</b></div>
     <span class="op">+</span>
-    <div class="amt"><small>${lensLabel}</small><b>${lenses != null ? eur(lenses) + ' €' : '—'}</b></div>
+    <div class="amt"><small>${lensLabelFull}</small><b>${lenses != null ? eur(lenses) + ' €' : '—'}</b></div>
     <span class="op">=</span>
     ${o && meo && !meo.closed ? '<button class="btn send-meo" id="sendMeo" title="Coller le libellé des verres dans le devis MyEasyOptic">Envoyer dans<br>MyEasyOptic →</button>' : ''}
     <div class="amt total"><small>Total</small><b>${frame != null || lenses != null ? eur(total) + ' €' : '—'}</b></div>`;
@@ -575,7 +582,7 @@ window.addEventListener('message', e => {
 function fromMeo(d) {
   resetClient();
   for (const e of ['od', 'og']) {
-    for (const f of ['sph', 'cyl', 'axe', 'add']) {
+    for (const f of ['sph', 'cyl', 'axe', 'add', 'prism', 'base']) {
       const v = (d.rx?.[e]?.[f] || '').replace(/°/g, '');
       const inp = $(`[data-rx="${e}.${f}"]`);
       S.rx[e][f] = v; inp.value = v;
@@ -603,6 +610,8 @@ function meoLabels(o) {
   const other = ref(o.unif.g, o.unif.key);
   return progEye() === 'od' ? { od: main, og: other } : { od: other, og: main };
 }
+// yeux avec un prisme saisi
+const prismEyes = () => ['od', 'og'].filter(e => num(S.rx[e].prism) > 0);
 const tintColors = () => cfg.tints.find(t => t.id === S.opts.tint)?.colors || [];
 const curColor = () => { const l = tintColors(); return l.find(c => c.name === S.opts.color) || l[0] || null; };
 function sendToMeo() {
@@ -610,10 +619,12 @@ function sendToMeo() {
   if (!o || !meo || meo.closed) return toast("MyEasyOptic n'est plus ouvert : relancez le bouton « → Podium » depuis le devis.");
   const l = meoLabels(o);
   // suppléments à cocher dans MyEasyOptic après le choix du diamètre : Précal, couleur de teinte Transitions
-  const supps = [];
-  if (o.precal && cfg.supplements.precalCode) supps.push({ code: cfg.supplements.precalCode, name: 'Précal' });
+  const supps = [], both = ['od', 'og'];
+  if (o.precal && cfg.supplements.precalCode) supps.push({ code: cfg.supplements.precalCode, lib: 'Precal', name: 'Précal', eyes: both });
   const tint = cfg.tints.find(t => t.id === o.tint);
-  if (tint?.photo && curColor()) supps.push({ code: curColor().code, name: `${tint.name} ${curColor().name}` });
+  if (tint?.photo && curColor()) supps.push({ code: curColor().code, lib: curColor().lib || '', name: `${tint.name} ${curColor().name}`, eyes: both });
+  const prisms = o.classA ? [] : prismEyes();
+  if (prisms.length) supps.push({ code: cfg.supplements.prismCode || '550', lib: 'Prisme standard', name: `Prisme standard ${prisms.map(eyeName).join('/')}`, eyes: prisms });
   meo.postMessage({ type: 'podium-verres', v: 2, od: l.od.lab, og: l.og.lab, odCode: l.od.code, ogCode: l.og.code, supps, precal: !!o.precal }, MEO_ORIGIN);
   try { meo.focus(); } catch (e) {}
   // Podium a été ouvert par MyEasyOptic : on referme l'onglet (sans effet si Podium a été ouvert à la main)

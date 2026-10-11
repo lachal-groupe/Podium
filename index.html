@@ -6,7 +6,7 @@
 <title>Podium L4C84L</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=78f0788006">
+<link rel="stylesheet" href="styles.css?v=76d3993f14">
 </head>
 <body>
 <header class="topbar">
@@ -33,17 +33,21 @@
   <section class="panel">
     <div class="panel-h"><h2><span class="step-num">1</span> Correction</h2><button class="link" id="copyOD">Copier OD → OG</button></div>
     <div class="rx">
-      <div></div><label>Sphère</label><label>Cylindre</label><label>Axe</label><label>Addition</label>
+      <div></div><label>Sphère</label><label>Cylindre</label><label>Axe</label><label>Addition</label><label>Prisme</label><label>Base</label>
       <span class="eye">OD</span>
       <input data-rx="od.sph" inputmode="decimal" placeholder="0,00">
       <input data-rx="od.cyl" inputmode="decimal" placeholder="0,00">
       <input data-rx="od.axe" inputmode="numeric" placeholder="0°">
       <input data-rx="od.add" inputmode="decimal" placeholder="—">
+      <input data-rx="od.prism" inputmode="decimal" placeholder="—">
+      <input data-rx="od.base" inputmode="numeric" placeholder="—">
       <span class="eye">OG</span>
       <input data-rx="og.sph" inputmode="decimal" placeholder="0,00">
       <input data-rx="og.cyl" inputmode="decimal" placeholder="0,00">
       <input data-rx="og.axe" inputmode="numeric" placeholder="0°">
       <input data-rx="og.add" inputmode="decimal" placeholder="—">
+      <input data-rx="og.prism" inputmode="decimal" placeholder="—">
+      <input data-rx="og.base" inputmode="numeric" placeholder="—">
     </div>
     <label class="mixed" id="mixedBox" hidden><input type="checkbox" id="mixedChk"> <span id="mixedTxt">Confirmer équipement progressif / unifocal ?</span></label>
     <div class="rx-info" id="rxInfo"></div>
@@ -112,8 +116,8 @@
   </form>
 </div>
 
-<script src="data.enc.js?v=78f0788006"></script>
-<script src="app.js?v=78f0788006"></script>
-<script src="admin.js?v=78f0788006"></script>
+<script src="data.enc.js?v=76d3993f14"></script>
+<script src="app.js?v=76d3993f14"></script>
+<script src="admin.js?v=76d3993f14"></script>
 </body>
 </html>
