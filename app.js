@@ -33,12 +33,15 @@ const newNetwork = name => ({ id: name.toLowerCase().normalize('NFD').replace(/[
 function migrate(c) {
   if (!c.networks) c.networks = clone(window.PODIUM_DEFAULT.networks || NETWORKS.map(newNetwork));
   if (!c.netClasses) c.netClasses = clone(window.PODIUM_DEFAULT.netClasses || []);
+  if (!c.noNetwork) c.noNetwork = clone(window.PODIUM_DEFAULT.noNetwork || { treatments: [], defaults: {} });
   // grilles relevées dans MyEasyOptic : un relevé plus récent remplace verres et tarifs de la copie locale
   for (const dn of window.PODIUM_DEFAULT.networks || []) {
     const n = c.networks.find(x => x.id === dn.id);
     if (!n) { c.networks.push(clone(dn)); continue; }
     if (dn.source && dn.source !== n.source) Object.assign(n, { gammes: clone(dn.gammes), prices: clone(dn.prices), source: dn.source, corrSupp: clone(dn.corrSupp || n.corrSupp || null) });
     if (!n.corrSupp) n.corrSupp = clone(dn.corrSupp || { prog: [], unif: [] });
+    if (!n.treatments && dn.treatments) n.treatments = clone(dn.treatments);
+    if (!n.defaults && dn.defaults) n.defaults = clone(dn.defaults);
     if (dn.rulesVersion && dn.rulesVersion !== n.rulesVersion) Object.assign(n, { rules: clone(dn.rules), supp: clone(dn.supp || null), rulesVersion: dn.rulesVersion });
   }
   if (!c.optionImages) c.optionImages = clone(window.PODIUM_DEFAULT.optionImages || {});
@@ -381,6 +384,7 @@ function offers() {
   const allowed = !S.opts.blueMat ? [''] : S.opts.blue ? ['buc', 'eps'] : ['buc', 'eps', ''];
   const blueTr = S.opts.blue && S.opts.blueTr;
   const arSel = S.opts.ar ? S.opts.arSel : [];
+  const allowedTr = optScope().treatments || [];
   const mats = matsSorted();
   const out = [];
   for (const g of cfg.gammes) {
@@ -393,6 +397,7 @@ function offers() {
     for (const tr of cfg.treatments) {
       if (tr.shown === false) continue;
       if (arSel.length && !arSel.includes(tr.id)) continue;
+      if (allowedTr.length && !allowedTr.includes(tr.id)) continue; // traitements retenus pour ce réseau
       if (blueTr && !tr.blue) continue;
       let mat = null, v = null;
       for (const m of mats) {
@@ -548,7 +553,8 @@ function renderRecap() {
 /* ---------- Étape 2 : options ---------- */
 function renderFilters() {
   const photoTints = cfg.tints.filter(t => t.photo);
-  const shownTr = cfg.treatments.filter(t => t.shown !== false);
+  const allowedTr = optScope().treatments || [];
+  const shownTr = cfg.treatments.filter(t => t.shown !== false && (!allowedTr.length || allowedTr.includes(t.id)));
   // Panier A : les autres options ne s'appliquent pas, elles sont grisées
   const tog = (id, label, sub, extra = '') => `<div class="tog ${S.opts[id] ? 'on' : ''} ${S.opts.panierA && id !== 'panierA' ? 'locked' : ''}" data-opt="${id}" role="switch" aria-checked="${!!S.opts[id]}" tabindex="0"><span class="sw"></span><span>${label}${sub ? `<br><small>${sub}</small>` : ''}</span>${extra}</div>`;
   const chk = (id, label, dis) => `<label class="mini-chk ${dis ? 'dis' : ''}"><input type="checkbox" data-chk="${id}" ${S.opts[id] ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${label}</label>`;
@@ -803,6 +809,28 @@ function renderMini() {
   $('#ctrlMini').innerHTML = `<span class="mini-l">Options</span>${chips.map(c => `<span class="pill">${esc(c)}</span>`).join('') || '<span class="pill">Aucune option</span>'}<span class="mini-e">⚙ Modifier les options</span>`;
 }
 
+// Réglages d'options du réseau choisi, sinon du hors réseau
+const optScope = () => curNet() || cfg.noNetwork || {};
+// Sens de la correction : sphère de l'œil le plus fort (+1 positive, −1 négative, 0 plan)
+function rxSign() {
+  let best = 0;
+  for (const e of ['od', 'og']) { const s = num(S.rx[e].sph) || 0; if (Math.abs(s) > Math.abs(best)) best = s; }
+  return Math.sign(best);
+}
+// Options pré-cochées (paramètres du réseau ou hors réseau) : appliquées à l'arrivée sur le podium,
+// à nouveau seulement si le réseau ou le sens de la correction change (les choix de l'opticien sont conservés)
+function applyDefaults() {
+  const sign = rxSign(), sig = (S.network || '') + '|' + sign;
+  if (S.defSig === sig) return;
+  S.defSig = sig;
+  const def = optScope().defaults || {};
+  for (const k of ['precal', 'blue', 'ar', 'photo', 'antifatigue']) {
+    const v = def[k];
+    if (!v) continue; // au choix de l'opticien
+    S.opts[k] = v === 'on' || (v === 'pos' && sign > 0) || (v === 'neg' && sign < 0);
+  }
+}
+
 function showStep(n) {
   S.step = n;
   $('#stepInput').hidden = n !== 1;
@@ -986,6 +1014,7 @@ function bindMain() {
     $$('[data-rx]').forEach(checkRx);
     const bad = $('[data-rx].invalid');
     if (bad) { renderEntry(); toast(bad.title); bad.focus(); return; }
+    applyDefaults();
     showStep(2);
   };
   $('#framePrice').addEventListener('keydown', e => { if (e.key === 'Enter') { e.target.blur(); go(); } });

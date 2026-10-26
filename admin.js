@@ -313,10 +313,15 @@
   function tabReseaux() {
     const c = cfg();
     c.networks = c.networks || [];
-    if (!c.networks.some(n => n.id === netId)) netId = c.networks[0]?.id || null;
+    c.noNetwork = c.noNetwork || { treatments: [], defaults: {} };
+    if (netId !== '__none' && !c.networks.some(n => n.id === netId)) netId = c.networks[0]?.id || null;
     const net = c.networks.find(n => n.id === netId);
     const ni = c.networks.indexOf(net);
-    const nav = `<div class="row" style="margin-bottom:14px;gap:8px">${c.networks.map(n => `<button class="btn ${n.id === netId ? 'primary' : ''}" data-net="${esc(n.id)}">${esc(n.name)} <small style="opacity:.7" data-ncount="${esc(n.id)}">${(n.gammes || []).length}</small></button>`).join('')}<button class="btn ghost" id="netAdd">＋ Réseau</button></div>`;
+    const nav = `<div class="row" style="margin-bottom:14px;gap:8px"><button class="btn ${netId === '__none' ? 'primary' : ''}" data-net="__none">Hors réseau</button>${c.networks.map(n => `<button class="btn ${n.id === netId ? 'primary' : ''}" data-net="${esc(n.id)}">${esc(n.name)} <small style="opacity:.7" data-ncount="${esc(n.id)}">${(n.gammes || []).length}</small></button>`).join('')}<button class="btn ghost" id="netAdd">＋ Réseau</button></div>`;
+    if (netId === '__none') {
+      $('#tabBody').innerHTML = `<div class="card-admin">${nav}<p class="sub">Réglages appliqués quand aucun réseau n'est coché à l'étape 3 (tarifs catalogue).</p></div>${optionsCard(c.noNetwork, 'hors réseau')}`;
+      bindNav(); bindOptions(c.noNetwork); return;
+    }
     if (!net) { $('#tabBody').innerHTML = `<div class="card-admin">${nav}<p class="sub">Aucun réseau. Ajoutez-en un.</p></div>`; return bindNav(); }
     net.gammes = net.gammes || []; net.prices = net.prices || {};
     net.corrSupp = net.corrSupp || { prog: [], unif: [] }; net.corrSupp.prog = net.corrSupp.prog || []; net.corrSupp.unif = net.corrSupp.unif || [];
@@ -344,7 +349,8 @@
         <button class="btn small" id="nAllShown">Ajouter toutes les gammes affichées</button>
       </div>
       <div class="scroll-x" id="ntable"></div></div>
-    <div class="card-admin" id="nprices"></div>`;
+    <div class="card-admin" id="nprices"></div>
+    ${optionsCard(net, net.name)}`;
     const draw = () => {
       const q = nf.q.trim().toLowerCase();
       const list = c.gammes.filter(g => (nf.show === 'all' || net.gammes.includes(g.id)) && (nf.type === 'all' || g.type === nf.type) && (!q || (g.name + ' ' + (g.source || '')).toLowerCase().includes(q)))
@@ -415,8 +421,25 @@
     $('#nq').oninput = e => { nf.q = e.target.value; draw(); };
     $$('#nshow button').forEach(b => b.onclick = () => { nf.show = b.dataset.v; tabReseaux(); });
     $$('#ntype button').forEach(b => b.onclick = () => { nf.type = b.dataset.v; tabReseaux(); });
+    bindOptions(net);
     $('#nAllShown').onclick = () => { net.gammes = [...new Set([...net.gammes, ...c.gammes.filter(g => g.enabled).map(g => g.id)])]; save('Gammes affichées ajoutées'); tabReseaux(); };
     draw(); prices();
+  }
+
+  // Options et traitements d'un réseau (ou du hors réseau) : traitements proposés et options pré-cochées
+  const OPT_DEF = [['precal', 'Précal'], ['blue', 'Filtre lumière bleue'], ['ar', 'Anti-reflets'], ['photo', 'Transitions'], ['antifatigue', 'Anti-fatigue']];
+  const OPT_CHOICES = [['', 'Au choix de l\'opticien'], ['on', 'Pré-coché'], ['off', 'Décoché'], ['pos', 'Coché si correction positive'], ['neg', 'Coché si correction négative']];
+  function optionsCard(sc, title) {
+    const trs = cfg().treatments.filter(t => t.shown !== false), sel = sc.treatments || [];
+    return `<div class="card-admin"><h3>Options et traitements — ${esc(title)}</h3>
+      <p class="sub">Traitements proposés sur le podium (aucun coché : tous) et options cochées automatiquement à l'arrivée sur le podium.
+        Correction positive ou négative : sphère de l'œil le plus fort. L'opticien peut toujours modifier les options ensuite.</p>
+      <div class="row" style="flex-wrap:wrap;gap:8px 20px;margin:10px 0 16px">${trs.map(t => `<label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" data-otr="${t.id}" ${sel.includes(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')}</div>
+      <table class="tbl"><thead><tr><th>Option</th><th>À l'arrivée sur le podium</th></tr></thead><tbody>${OPT_DEF.map(([k, l]) => `<tr><td>${l}</td><td><select data-odef="${k}">${OPT_CHOICES.map(([v, n]) => `<option value="${v}" ${(sc.defaults?.[k] || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>`;
+  }
+  function bindOptions(sc) {
+    $$('[data-otr]').forEach(el => el.onchange = () => { sc.treatments = $$('[data-otr]').filter(x => x.checked).map(x => x.dataset.otr); save(); });
+    $$('[data-odef]').forEach(el => el.onchange = () => { sc.defaults = sc.defaults || {}; sc.defaults[el.dataset.odef] = el.value; save(); });
   }
 
   // Règles de grille (fiches Essilor) : résumé des règles appliquées par le podium
