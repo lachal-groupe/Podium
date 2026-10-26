@@ -222,11 +222,12 @@ function netPrice(g, k, p) {
 // Valeurs de chaque œil utilisées par les règles des réseaux (cylindre en convention positive, comme la saisie Podium)
 //   s : |sphère| · c : |cylindre| · sc : |sphère| + |cylindre| · bcia (Carte Blanche) : sphère + cylindre + addition
 //   si sphère ≥ 0, sinon sphère · sumSC / sumSCA : |S + C| et |S + C + Add| (conditions Précal Kalixia)
+//   m (Santéclair, Itelis) : « S ou S + C » = méridien le plus fort, max(|S|, |S + C|)
 function eyeVals() {
   return ['od', 'og'].map(e => {
     const sph = num(S.rx[e].sph) || 0, cyl = Math.abs(num(S.rx[e].cyl) || 0), add = num(S.rx[e].add) || 0;
     return { s: Math.abs(sph), c: cyl, sc: Math.abs(sph) + cyl, bcia: sph >= 0 ? sph + cyl + add : sph,
-      sumSC: Math.abs(sph + cyl), sumSCA: Math.abs(sph + cyl + add) };
+      sumSC: Math.abs(sph + cyl), sumSCA: Math.abs(sph + cyl + add), m: Math.max(Math.abs(sph), Math.abs(sph + cyl)) };
   });
 }
 const inRange = (v, r) => !r || (v >= r[0] - 1e-9 && v <= r[1] + 1e-9);
@@ -258,7 +259,7 @@ function rulePrice(net, g, k) {
     const s = Math.max(...eyes.map(x => x.s));
     let ci = (R.sph || []).findIndex(x => s <= x); if (ci < 0) ci = (R.sph || []).length;
     const bm = base[mat]?.[ci]; if (bm == null) return null;
-    for (const m0 of Object.keys(base)) {   // matière de référence relevée (Orma d'abord)
+    for (const m0 of [mat, ...Object.keys(base).filter(x => x !== mat)]) {   // tarif relevé de la même matière, sinon d'une autre
       const k0 = `${m0}|${filt}|${tr}|${tint}`, p0 = g.prices[k0], b0 = base[m0]?.[0];
       const r = p0 && net.prices?.[netKey(g, k0, p0)];
       if (typeof r === 'number' && b0 != null) { v = r - b0 + bm; break; }
@@ -268,12 +269,27 @@ function rulePrice(net, g, k) {
     if (typeof r === 'number') v = r;
   }
   if (v == null) return null;
+  // Santéclair : au-dessous du seuil de la matière, tarif d'une matière inférieure (écart de la table) ou décote
+  for (const c of R.cap || []) {
+    if (!c.mat.includes(mat) || !eyes.every(x => ruleMatch(c.when, x))) continue;
+    const t = R.matTable?.[g.type] || {};
+    if (c.to && t[mat] != null && t[c.to] != null) v -= t[mat] - t[c.to];
+    if (c.minus) v -= c.minus;
+    break;
+  }
   v += netExtra(R, eyes);
+  // individualisation (Santéclair) : décote si aucun œil n'atteint la condition
+  if (R.fitRule && (R.fitRule.gammes ? R.fitRule.gammes.includes(g.id) : g.fit) && !eyes.some(x => ruleMatch(R.fitRule.needs, x))) v -= R.fitRule.minus;
   if (R.fitDiscount && g.fit && !fitJustified(R.fitDiscount)) v = Math.round(v * (1 - R.fitDiscount.rate) * 100) / 100;
   return v;
 }
 // Précal pris en charge par le réseau (Kalixia : seulement si |S + C| ≥ 2 ou |S + C + Add| ≥ 2 sur un œil)
-const netPrecal = n => n.supp.precalIf && !eyeVals().some(x => x.sumSC >= n.supp.precalIf || x.sumSCA >= n.supp.precalIf) ? 0 : n.supp.precal;
+function netPrecal(n) {
+  const eyes = eyeVals(), P = n.supp;
+  if (P.precalIf && !eyes.some(x => x.sumSC >= P.precalIf || x.sumSCA >= P.precalIf)) return 0;
+  if (P.precalWhen && !eyes.some(x => ruleMatch(P.precalWhen, x))) return P.precalElse ?? 0;
+  return P.precal;
+}
 // Supplément de la grille selon la correction (ex. Actil) : classe témoin la plus proche de chaque œil, la plus chère retenue
 function netCorrSupp(net, type) {
   const cls = cfg.netClasses || [], sup = net.corrSupp?.[type];
