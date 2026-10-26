@@ -319,6 +319,7 @@
     const nav = `<div class="row" style="margin-bottom:14px;gap:8px">${c.networks.map(n => `<button class="btn ${n.id === netId ? 'primary' : ''}" data-net="${esc(n.id)}">${esc(n.name)} <small style="opacity:.7" data-ncount="${esc(n.id)}">${(n.gammes || []).length}</small></button>`).join('')}<button class="btn ghost" id="netAdd">＋ Réseau</button></div>`;
     if (!net) { $('#tabBody').innerHTML = `<div class="card-admin">${nav}<p class="sub">Aucun réseau. Ajoutez-en un.</p></div>`; return bindNav(); }
     net.gammes = net.gammes || []; net.prices = net.prices || {};
+    net.corrSupp = net.corrSupp || { prog: [], unif: [] }; net.corrSupp.prog = net.corrSupp.prog || []; net.corrSupp.unif = net.corrSupp.unif || [];
     const key = (g, k) => g.prices[k]?.code || `${g.id}|${k}`;
     const nPrices = g => Object.keys(g.prices).filter(k => typeof net.prices[key(g, k)] === 'number').length;
     $('#tabBody').innerHTML = `<div class="card-admin">${nav}
@@ -329,6 +330,11 @@
       <p class="sub" style="margin-top:12px">Quand ce réseau est coché à l'étape 3, le podium ne propose que les gammes cochées ci-dessous, à leur tarif réseau (les options Précal et Transitions s'y ajoutent).
         Une gamme masquée dans « Gammes » peut être proposée ici : elle n'apparaîtra qu'avec ce réseau.
         <b>Tarifs AreaGRILLE :</b> ils viendront remplir ces cases automatiquement dès que l'accès sera disponible.</p></div>
+    <div class="card-admin"><h3>Supplément selon la correction</h3>
+      <p class="sub">Certaines grilles augmentent le prix selon la correction (relevé MyEasyOptic : seule Actil le fait). Le supplément de la correction témoin la plus proche s'ajoute au tarif réseau ; avec deux yeux différents, le plus élevé est retenu.${net.source ? ` Tarifs relevés : ${esc(net.source)}.` : ''}</p>
+      <div class="scroll-x"><table class="tbl"><thead><tr><th>Correction témoin</th><th>Sphère</th><th>Cylindre</th><th>Progressif (€ / verre)</th><th>Unifocal (€ / verre)</th></tr></thead>
+      <tbody>${(c.netClasses || []).map((k, i) => `<tr><td>${esc(k.name)}</td><td>${String(k.sph).replace('.', ',')}</td><td>${String(k.cyl).replace('.', ',')}</td>
+        <td>${inp(`networks.${ni}.corrSupp.prog.${i}`, 'num')}</td><td>${inp(`networks.${ni}.corrSupp.unif.${i}`, 'num')}</td></tr>`).join('')}</tbody></table></div></div>
     <div class="card-admin"><h3>Verres proposés — ${esc(net.name)}</h3>
       <div class="row" style="margin:10px 0 12px">
         <input type="text" id="nq" placeholder="Rechercher une gamme…" value="${esc(nf.q)}" style="max-width:280px;text-align:left">
@@ -403,6 +409,7 @@
     }
     bindNav();
     bindAll($('#tabBody').firstElementChild, el => { if (el.dataset.bind.endsWith('.name')) tabReseaux(); });
+    bindAll($('#tabBody').children[1]);
     $('#netDel').onclick = () => { if (!confirm(`Supprimer le réseau ${net.name} et ses tarifs ?`)) return; c.networks.splice(ni, 1); netId = null; save('Réseau supprimé'); tabReseaux(); };
     $('#nq').oninput = e => { nf.q = e.target.value; draw(); };
     $$('#nshow button').forEach(b => b.onclick = () => { nf.show = b.dataset.v; tabReseaux(); });

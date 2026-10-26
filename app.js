@@ -32,6 +32,14 @@ const newNetwork = name => ({ id: name.toLowerCase().normalize('NFD').replace(/[
 // Complète une config enregistrée avec les champs apparus depuis (mots-clés, gamme de base des versions Fit/Short)
 function migrate(c) {
   if (!c.networks) c.networks = clone(window.PODIUM_DEFAULT.networks || NETWORKS.map(newNetwork));
+  if (!c.netClasses) c.netClasses = clone(window.PODIUM_DEFAULT.netClasses || []);
+  // grilles relevées dans MyEasyOptic : un relevé plus récent remplace verres et tarifs de la copie locale
+  for (const dn of window.PODIUM_DEFAULT.networks || []) {
+    const n = c.networks.find(x => x.id === dn.id);
+    if (!n) { c.networks.push(clone(dn)); continue; }
+    if (dn.source && dn.source !== n.source) Object.assign(n, { gammes: clone(dn.gammes), prices: clone(dn.prices), source: dn.source, corrSupp: clone(dn.corrSupp || n.corrSupp || null) });
+    if (!n.corrSupp) n.corrSupp = clone(dn.corrSupp || { prog: [], unif: [] });
+  }
   if (!c.optionImages) c.optionImages = clone(window.PODIUM_DEFAULT.optionImages || {});
   // nouvelle version des fiches (textes du PDF Essilor, visuels) : remplace les fiches non retouchées dans les paramètres
   const fresh = (c.ficheVersion || 1) < (window.PODIUM_DEFAULT.ficheVersion || 1);
@@ -204,7 +212,20 @@ function netPrice(g, k, p) {
   const net = curNet();
   if (!net || !inNet(g, net)) return null;
   const v = net.prices?.[netKey(g, k, p)];
-  return typeof v === 'number' ? v : null;
+  return typeof v === 'number' ? v + netCorrSupp(net, g.type) : null;
+}
+// Supplément de la grille selon la correction (ex. Actil) : classe témoin la plus proche de chaque œil, la plus chère retenue
+function netCorrSupp(net, type) {
+  const cls = cfg.netClasses || [], sup = net.corrSupp?.[type];
+  if (!cls.length || !sup || !sup.some(Number)) return 0;
+  let best = 0;
+  for (const e of ['od', 'og']) {
+    const s = Math.abs(num(S.rx[e].sph) || 0), c = Math.abs(num(S.rx[e].cyl) || 0);
+    let k = 0, dist = Infinity;
+    cls.forEach((x, i) => { const dd = (x.sph - s) ** 2 + (x.cyl - c) ** 2; if (dd < dist) { dist = dd; k = i; } });
+    best = Math.max(best, +sup[k] || 0);
+  }
+  return best;
 }
 // gamme proposée : sans réseau, les gammes affichées ; avec réseau, celles de sa grille (+ le catalogue si la grille le prévoit)
 const inScope = g => { const net = curNet(); return net ? inNet(g, net) || (!!net.withCatalogue && g.enabled) : g.enabled; };
