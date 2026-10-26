@@ -41,6 +41,7 @@ function migrate(c) {
     if (dn.source && dn.source !== n.source) Object.assign(n, { gammes: clone(dn.gammes), prices: clone(dn.prices), source: dn.source, corrSupp: clone(dn.corrSupp || n.corrSupp || null) });
     if (!n.corrSupp) n.corrSupp = clone(dn.corrSupp || { prog: [], unif: [] });
     if (!n.treatments && dn.treatments) n.treatments = clone(dn.treatments);
+    if (dn.exclude) { n.exclude = clone(dn.exclude); n.excludeNote = dn.excludeNote; }
     if (!n.defaults && dn.defaults) n.defaults = clone(dn.defaults);
     if (dn.rulesVersion && dn.rulesVersion !== n.rulesVersion) Object.assign(n, { rules: clone(dn.rules), supp: clone(dn.supp || null), rulesVersion: dn.rulesVersion });
   }
@@ -215,7 +216,7 @@ function priceOf(g, mat, filt, tr, tint) {
 // (tarif rattaché au code EDI ; à défaut de tarif saisi, prix catalogue)
 const curNet = () => S.network ? (cfg.networks || []).find(n => n.id === S.network) || null : null;
 const netKey = (g, k, p) => p?.code || `${g.id}|${k}`;
-const inNet = (g, net = curNet()) => !!net && (net.gammes || []).includes(g.id);
+const inNet = (g, net = curNet()) => !!net && (net.gammes || []).includes(g.id) && !(net.exclude || []).includes(g.id);
 function netPrice(g, k, p) {
   const net = curNet();
   if (!net || !inNet(g, net)) return null;
@@ -553,6 +554,13 @@ function renderRecap() {
 }
 
 /* ---------- Étape 2 : options ---------- */
+// Prix du Précal affiché : celui du réseau coché (avec ses conditions), sinon celui du catalogue
+function precalLabel() {
+  const n = curNet(), base = +cfg.supplements.precal || 0;
+  const v = n?.supp?.precal != null ? netPrecal(n) : base;
+  if (n?.supp?.precal != null && !v) return `Non pris en charge par ${esc(n.name)} pour cette correction`;
+  return `+${eur(v)} € / verre${n?.supp?.precal != null ? ' · tarif ' + esc(n.name) : ''}`;
+}
 function renderFilters() {
   const photoTints = cfg.tints.filter(t => t.photo);
   const allowedTr = optScope().treatments || [];
@@ -563,7 +571,7 @@ function renderFilters() {
   const arSel = S.opts.arSel.filter(id => shownTr.some(t => t.id === id));
   const arLabel = !arSel.length ? 'Tous les traitements' : arSel.length === 1 ? shownTr.find(t => t.id === arSel[0]).name : `${arSel.length} traitements`;
   $('#optToggles').innerHTML =
-    tog('precal', 'Précal', `+${eur(+cfg.supplements.precal)} € / verre`) +
+    tog('precal', 'Précal', precalLabel()) +
     tog('blue', 'Filtre lumière bleue', '', `<span class="sub-opts">${chk('blueMat', 'Matière')}${chk('blueTr', 'Matière + traitement', !S.opts.blue)}</span>`) +
     tog('ar', 'Anti-reflets', '', S.opts.ar
       ? `<span class="dd"><button type="button" class="dd-btn" id="arBtn">${esc(arLabel)} ▾</button>${arOpen ? `<span class="dd-pop">${shownTr.map(t => `<label><input type="checkbox" data-ar="${t.id}" ${arSel.includes(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')}<button type="button" class="link" id="arAll">Tout afficher</button></span>` : ''}</span>`

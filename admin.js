@@ -342,6 +342,7 @@
       <tbody>${(c.netClasses || []).map((k, i) => `<tr><td>${esc(k.name)}</td><td>${String(k.sph).replace('.', ',')}</td><td>${String(k.cyl).replace('.', ',')}</td>
         <td>${inp(`networks.${ni}.corrSupp.prog.${i}`, 'num')}</td><td>${inp(`networks.${ni}.corrSupp.unif.${i}`, 'num')}</td></tr>`).join('')}</tbody></table></div></div>
     <div class="card-admin"><h3>Verres proposés — ${esc(net.name)}</h3>
+      ${(net.exclude || []).length ? `<p class="sub" style="color:#8a5200">⚠ Gammes écartées de cette grille : ${esc(net.exclude.map(id => c.gammes.find(g => g.id === id)?.name || id).join(', '))}. ${esc(net.excludeNote || '')}</p>` : ''}
       <div class="row" style="margin:10px 0 12px">
         <input type="text" id="nq" placeholder="Rechercher une gamme…" value="${esc(nf.q)}" style="max-width:280px;text-align:left">
         <div class="seg" id="nshow"><button data-v="in" class="${nf.show === 'in' ? 'on' : ''}">Dans la grille (${net.gammes.length})</button><button data-v="all" class="${nf.show === 'all' ? 'on' : ''}">Toutes (${c.gammes.length})</button></div>
