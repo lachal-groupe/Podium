@@ -419,19 +419,16 @@
     draw(); prices();
   }
 
-  // Règles de grille (ex. Actil) : affichage des tables appliquées par le podium
+  // Règles de grille (fiches Essilor) : résumé des règles appliquées par le podium
   function rulesCard(net) {
     const R = net.rules, c = cfg(), heads = ['s ≤ 2', '2 < s ≤ 4', '4 < s ≤ 6', '6 < s ≤ 8', '8 < s ≤ 10', 's > 10'];
     const mname = id => c.materials.find(m => m.id === id)?.name || id;
     const tbl = t => `<table class="tbl"><thead><tr><th>${t === 'prog' ? 'Progressifs' : 'Unifocaux'}</th>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead>
       <tbody>${Object.entries(R.base[t] || {}).map(([m, row]) => `<tr><td>${esc(mname(m))}</td>${heads.map((_, i) => `<td>${row[i] == null ? '—' : eur(row[i]) + ' €'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-    const sup = net.supp || {};
     return `<div class="card-admin"><h3>Règles de la grille ${esc(net.name)}</h3>
-      <p class="sub">${esc(R.label || '')}. Le tarif relevé dans MyEasyOptic (sphère ≤ 2, sans cylindre) est ajusté selon la correction la plus forte des deux yeux :
-        base de la matière selon la sphère (tableaux ci-dessous), cylindre ${(R.cyl || []).map(x => `≤ ${String(x.max).replace('.', ',')} : +${x.supp} €`).join(' · ')}.
-        Indice maximum : ${(R.maxIndex || []).map(x => `s ≤ ${x.sph > 99 ? '∞' : x.sph} → ${x.index}${x.scOver != null ? ` (${x.indexSc} si s + c > ${x.scOver})` : ''}`).join(' · ')}.
-        Suppléments du réseau : Précal ${sup.precal ?? '—'} €, prisme ${sup.prism ?? '—'} €, photochromique ${sup.tint === 0 ? 'compris dans le tarif' : (sup.tint ?? '—') + ' €'}.</p>
-      <div class="scroll-x">${tbl('prog')}</div><div class="scroll-x" style="margin-top:10px">${tbl('unif')}</div></div>`;
+      <p class="sub">${esc(R.label || '')}. Appliquées sur la correction de chaque œil (le plus favorable pour la matière, le plus cher pour les suppléments).</p>
+      <ul class="sub" style="margin:8px 0 0 18px">${(R.notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul>
+      ${R.base ? `<div class="scroll-x" style="margin-top:10px">${tbl('prog')}</div><div class="scroll-x" style="margin-top:10px">${tbl('unif')}</div>` : ''}</div>`;
   }
 
   /* ---------- Import / sauvegarde ---------- */

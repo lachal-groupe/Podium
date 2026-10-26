@@ -219,37 +219,61 @@ function netPrice(g, k, p) {
   const v = net.prices?.[netKey(g, k, p)];
   return typeof v === 'number' ? v + netCorrSupp(net, g.type) : null;
 }
-// Correction la plus forte des deux yeux (sphère et cylindre en valeur absolue, cylindre en convention positive)
-function rxStrength() {
-  let s = 0, c = 0, sc = 0;
-  for (const e of ['od', 'og']) {
-    const a = Math.abs(num(S.rx[e].sph) || 0), b = Math.abs(num(S.rx[e].cyl) || 0);
-    s = Math.max(s, a); c = Math.max(c, b); sc = Math.max(sc, a + b);
-  }
-  return { s, c, sc };
+// Valeurs de chaque œil utilisées par les règles des réseaux (cylindre en convention positive, comme la saisie Podium)
+//   s : |sphère| · c : |cylindre| · sc : |sphère| + |cylindre| · bcia (Carte Blanche) : sphère + cylindre + addition
+//   si sphère ≥ 0, sinon sphère · sumSC / sumSCA : |S + C| et |S + C + Add| (conditions Précal Kalixia)
+function eyeVals() {
+  return ['od', 'og'].map(e => {
+    const sph = num(S.rx[e].sph) || 0, cyl = Math.abs(num(S.rx[e].cyl) || 0), add = num(S.rx[e].add) || 0;
+    return { s: Math.abs(sph), c: cyl, sc: Math.abs(sph) + cyl, bcia: sph >= 0 ? sph + cyl + add : sph,
+      sumSC: Math.abs(sph + cyl), sumSCA: Math.abs(sph + cyl + add) };
+  });
 }
-// Règles de grille (ex. Actil, fiches Essilor) : prix = part design + traitement (relevée dans MyEasyOptic pour une
-// sphère ≤ 2) − base de la matière relevée + base de la matière choisie pour la classe de sphère + supplément cylindre.
-// Matière absente de la base pour cette sphère, ou au-delà de l'indice maximum autorisé : verre non proposé.
-function rulePrice(net, g, k) {
-  const R = net.rules, base = R.base?.[g.type];
-  if (!base) return null;
-  const [mat, filt, tr, tint] = k.split('|');
-  const { s, c, sc } = rxStrength();
-  let ci = (R.sph || []).findIndex(x => s <= x); if (ci < 0) ci = (R.sph || []).length;
-  const bm = base[mat]?.[ci];
-  if (bm == null) return null;
+const inRange = (v, r) => !r || (v >= r[0] - 1e-9 && v <= r[1] + 1e-9);
+const ruleMatch = (w, x) => !w || Object.keys(w).every(k => inRange(x[k], w[k]));
+// Matière autorisée par le réseau : indice maximum (première règle qui correspond, œil le plus favorable),
+// jamais en dessous du minimum imposé par la monture ; matières toujours permises ou limitées à une plage
+function netMatAllowed(R, mat, eyes) {
   const m = cfg.materials.find(x => x.id === mat);
-  const lim = (R.maxIndex || []).find(x => s <= x.sph);
-  if (m && lim && m.index > (sc > (lim.scOver ?? Infinity) ? lim.indexSc : lim.index) + 1e-9) return null;
-  const cyl = c > 0 ? ((R.cyl || []).find(x => c <= x.max)?.supp ?? 0) : 0;
-  for (const m0 of Object.keys(base)) {   // matière de référence relevée (Orma d'abord)
-    const k0 = `${m0}|${filt}|${tr}|${tint}`, p0 = g.prices[k0], b0 = base[m0]?.[0];
-    const v = p0 && net.prices?.[netKey(g, k0, p0)];
-    if (typeof v === 'number' && b0 != null) return v - b0 + bm + cyl;
-  }
-  return null;
+  if (!m || (R.matAlways || []).includes(mat)) return true;
+  const range = R.matRange?.[mat];
+  if (range && !eyes.every(x => ruleMatch(range, x))) return false;
+  const lim = Math.max(...eyes.map(x => (R.maxIndex || []).find(r => ruleMatch(r.when, x))?.index ?? Infinity), frameDef()?.minIndex || 0);
+  return m.index <= lim + 1e-9;
 }
+// Suppléments de fabrication liés à la correction (cylindre, forte sphère…) : œil le plus cher
+const netExtra = (R, eyes) => Math.max(0, ...eyes.map(x => (R.extra || []).reduce((t, e) => t + (ruleMatch(e.when, x) ? +e.supp || 0 : 0), 0)));
+// Verre individualisé (Kalixia) : tarif plein si au moins une mesure saisie sort des normes, sinon décote
+const fitJustified = F => Object.entries(F.norms || {}).some(([id, r]) => { const v = num(S.mes[id]); return v != null && !inRange(v, r); });
+// Prix réseau selon les règles de la grille (fiches Essilor « Podium – Règles … ») :
+//  - Actil (base) : relevé MyEasyOptic (sphère ≤ 2) − base de la matière relevée + base de la matière pour la classe de sphère ;
+//  - autres : tarif relevé dans MyEasyOptic, identique quelle que soit la correction ;
+//  + suppléments liés à la correction, − décote individualisation ; matière non autorisée : verre non proposé.
+function rulePrice(net, g, k) {
+  const R = net.rules, [mat, filt, tr, tint] = k.split('|'), eyes = eyeVals();
+  if (!netMatAllowed(R, mat, eyes)) return null;
+  let v = null;
+  if (R.base) {
+    const base = R.base[g.type]; if (!base) return null;
+    const s = Math.max(...eyes.map(x => x.s));
+    let ci = (R.sph || []).findIndex(x => s <= x); if (ci < 0) ci = (R.sph || []).length;
+    const bm = base[mat]?.[ci]; if (bm == null) return null;
+    for (const m0 of Object.keys(base)) {   // matière de référence relevée (Orma d'abord)
+      const k0 = `${m0}|${filt}|${tr}|${tint}`, p0 = g.prices[k0], b0 = base[m0]?.[0];
+      const r = p0 && net.prices?.[netKey(g, k0, p0)];
+      if (typeof r === 'number' && b0 != null) { v = r - b0 + bm; break; }
+    }
+  } else {
+    const p = g.prices[k], r = p && net.prices?.[netKey(g, k, p)];
+    if (typeof r === 'number') v = r;
+  }
+  if (v == null) return null;
+  v += netExtra(R, eyes);
+  if (R.fitDiscount && g.fit && !fitJustified(R.fitDiscount)) v = Math.round(v * (1 - R.fitDiscount.rate) * 100) / 100;
+  return v;
+}
+// Précal pris en charge par le réseau (Kalixia : seulement si |S + C| ≥ 2 ou |S + C + Add| ≥ 2 sur un œil)
+const netPrecal = n => n.supp.precalIf && !eyeVals().some(x => x.sumSC >= n.supp.precalIf || x.sumSCA >= n.supp.precalIf) ? 0 : n.supp.precal;
 // Supplément de la grille selon la correction (ex. Actil) : classe témoin la plus proche de chaque œil, la plus chère retenue
 function netCorrSupp(net, type) {
   const cls = cfg.netClasses || [], sup = net.corrSupp?.[type];
@@ -334,7 +358,7 @@ function offers() {
   const suppOf = g => {
     const n = curNet();
     if (!n?.supp || !inNet(g, n)) return supp;
-    return (S.opts.precal ? (n.supp.precal ?? (+cfg.supplements.precal || 0)) : 0) + (tintDef?.photo ? (n.supp.tint ?? (+tintDef.supp || 0)) : 0);
+    return (S.opts.precal ? (netPrecal(n) ?? (+cfg.supplements.precal || 0)) : 0) + (tintDef?.photo ? (n.supp.tint ?? (+tintDef.supp || 0)) : 0);
   };
   // Filtre lumière bleue : « Matière » = BUC/EPS exigé (option active) ou simplement autorisé (option inactive) ;
   // « Matière + traitement » ajoute le traitement filtrant. Matière décochée : verres sans BUC/EPS.
