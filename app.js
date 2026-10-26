@@ -14,7 +14,7 @@ let cfgNotice = '';
 let cfg; // chargée au démarrage, une fois l'accès ouvert
 function loadCfg() {
   // profil Magasin (user) : toujours la configuration publiée, jamais une copie locale
-  if (PROFILE === 'user') { try { localStorage.removeItem(LS_CFG); } catch (e) {} return clone(window.PODIUM_DEFAULT); }
+  if (PROFILE === 'user') { try { localStorage.removeItem(LS_CFG); } catch (e) {} return migrate(clone(window.PODIUM_DEFAULT)); }
   try {
     const s = localStorage.getItem(LS_CFG);
     if (s) {
@@ -23,10 +23,15 @@ function loadCfg() {
       if (c && c.gammes) { localStorage.setItem(LS_CFG + '-ancienne', s); cfgNotice = 'Nouvelle version des paramètres chargée (l\'ancienne est conservée en sauvegarde).'; }
     }
   } catch (e) {}
-  return clone(window.PODIUM_DEFAULT);
+  return migrate(clone(window.PODIUM_DEFAULT));
 }
+// Réseaux de soins (grilles tarifaires des complémentaires) proposés par défaut
+const NETWORKS = ['CARTE BLANCHE', 'SÉVÉANE', 'KALIXIA', 'SANTÉCLAIR', 'ITELIS', 'ACTIL'];
+const newNetwork = name => ({ id: name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+  name, gammes: [], prices: {}, withCatalogue: false });
 // Complète une config enregistrée avec les champs apparus depuis (mots-clés, gamme de base des versions Fit/Short)
 function migrate(c) {
+  if (!c.networks) c.networks = clone(window.PODIUM_DEFAULT.networks || NETWORKS.map(newNetwork));
   if (!c.optionImages) c.optionImages = clone(window.PODIUM_DEFAULT.optionImages || {});
   // nouvelle version des fiches (textes du PDF Essilor, visuels) : remplace les fiches non retouchées dans les paramètres
   const fresh = (c.ficheVersion || 1) < (window.PODIUM_DEFAULT.ficheVersion || 1);
@@ -63,7 +68,7 @@ const blankClient = () => ({
   frame: { type: cfg.frames[0]?.id, price: null }, mode: 'auto',
   // blueMat coché par défaut : les verres BUC / EPS sont présentés ; décoché : uniquement les verres sans BUC / EPS
   opts: { precal: false, blue: false, blueMat: true, blueTr: false, ar: false, arSel: [], photo: false, tint: 'trs', color: null, antifatigue: false, boost: null, panierA: false, noFit: false },
-  material: 'auto', pos: 0, selected: null,
+  material: 'auto', pos: 0, selected: null, network: null,
 });
 let S;
 
@@ -185,9 +190,24 @@ const trackOnly = () => cfg.fit.some(m => m.track && num(S.mes[m.id]) != null);
 
 // Clé de prix : matière | filtre (buc, eps ou vide) | traitement | teinte
 function priceOf(g, mat, filt, tr, tint) {
-  const p = g?.prices[`${mat}|${filt}|${tr}|${tint}`];
-  return p && typeof p.pv === 'number' ? p.pv : null;
+  const k = `${mat}|${filt}|${tr}|${tint}`, p = g?.prices[k];
+  if (!p) return null;
+  const n = netPrice(g, k, p);
+  return n != null ? n : typeof p.pv === 'number' ? p.pv : null;
 }
+// Réseau de soins choisi à l'étape 3 : seuls les verres de sa grille sont proposés, à son tarif
+// (tarif rattaché au code EDI ; à défaut de tarif saisi, prix catalogue)
+const curNet = () => S.network ? (cfg.networks || []).find(n => n.id === S.network) || null : null;
+const netKey = (g, k, p) => p?.code || `${g.id}|${k}`;
+const inNet = (g, net = curNet()) => !!net && (net.gammes || []).includes(g.id);
+function netPrice(g, k, p) {
+  const net = curNet();
+  if (!net || !inNet(g, net)) return null;
+  const v = net.prices?.[netKey(g, k, p)];
+  return typeof v === 'number' ? v : null;
+}
+// gamme proposée : sans réseau, les gammes affichées ; avec réseau, celles de sa grille (+ le catalogue si la grille le prévoit)
+const inScope = g => { const net = curNet(); return net ? inNet(g, net) || (!!net.withCatalogue && g.enabled) : g.enabled; };
 const FILTS = ['buc', 'eps', ''];
 // Variante disponible la moins chère pour une matière (parmi les filtres autorisés)
 function bestFilt(g, mat, tr, tint, allowed = FILTS) {
@@ -208,7 +228,7 @@ function unifPrice(mat, filt, tr, tint) {
   if (r) return { g: ref, p: r.p, f: r.f };
   let best = null;
   for (const g of cfg.gammes) {
-    if (g.type !== 'unif' || g.fit || !g.enabled) continue;
+    if (g.type !== 'unif' || g.fit || !inScope(g)) continue;
     const q = pick(g);
     if (q && (!best || q.p < best.p)) best = { g, p: q.p, f: q.f };
   }
@@ -218,7 +238,7 @@ function unifPrice(mat, filt, tr, tint) {
 // Eyezen Boost : puissance lue dans le libellé (« Eyezen Boost 0.6 Fit » -> 0.6)
 const boostOf = g => { const m = /Boost (\d+(?:\.\d+)?)/.exec(g.source || g.name); return m ? m[1] : null; };
 const curBoost = () => { const l = boostLevels(); return l.includes(S.opts.boost) ? S.opts.boost : l[0]; };
-const boostLevels = () => [...new Set(cfg.gammes.filter(g => g.enabled && boostOf(g)).map(boostOf))].sort((a, b) => a - b);
+const boostLevels = () => [...new Set(cfg.gammes.filter(g => inScope(g) && boostOf(g)).map(boostOf))].sort((a, b) => a - b);
 const isClassAFrame = () => { const p = num(S.frame.price); return p != null && p > 0 && cfg.classA && p <= cfg.classA.frameMax; };
 
 // Panier A (100 % Santé) : prix limite de l'équipement selon niveau (sphère) et cylindre, monture valorisée incluse.
@@ -261,7 +281,7 @@ function offers() {
   const mats = matsSorted();
   const out = [];
   for (const g of cfg.gammes) {
-    if (!g.enabled || g.type !== type) continue;
+    if (!inScope(g) || g.type !== type) continue;
     if (S.opts.antifatigue ? !g.antifatigue || (boostOf(g) && boostOf(g) !== curBoost()) : boostOf(g)) continue;
     if (track) { if (!g.track) continue; }              // CVP renseigné : uniquement des verres Track
     else if (g.track) continue;                        // un verre Track n'est proposé qu'avec un CVP
@@ -279,7 +299,8 @@ function offers() {
       }
       if (!mat) continue;
       const filt = v.f;
-      const o = { key: `${g.id}|${mat.id}|${filt}|${tr.id}|${tint}`, g, mat, filt, tr, tint, precal, price: v.p + supp };
+      const pk = `${mat.id}|${filt}|${tr.id}|${tint}`;
+      const o = { key: `${g.id}|${pk}`, g, mat, filt, tr, tint, precal, price: v.p + supp, net: netPrice(g, pk, g.prices[pk]) != null };
       if (mixed) { const u = unifPrice(mat.id, filt, tr.id, tint); o.unif = u ? { g: u.g, price: u.p + supp, key: `${mat.id}|${u.f}|${tr.id}|${tint}` } : null; }
       o.pair = mixed ? (o.unif ? o.price + o.unif.price : null) : o.price * 2;
       out.push(o);
@@ -343,6 +364,16 @@ function buildMesures() {
     <input data-mes="${m.id}" inputmode="decimal" placeholder="—" value="${esc(S.mes[m.id] ?? '')}">
     <span class="mstate" data-state="${m.id}">—</span></div>`).join('');
 }
+function buildNetSeg() {
+  $('#netSeg').innerHTML = (cfg.networks || []).map(n => `<button type="button" data-net="${esc(n.id)}" aria-pressed="false">${esc(n.name)}</button>`).join('');
+  if (S.network && !curNet()) S.network = null;
+}
+function renderNet() {
+  $$('#netSeg button').forEach(b => { const on = b.dataset.net === S.network; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  const net = curNet(), n = net ? cfg.gammes.filter(g => inNet(g, net)).length : 0;
+  $('#netNote').textContent = !net ? 'Aucun réseau : tarifs catalogue' : n ? `Grille ${net.name} : ${n} gamme${n > 1 ? 's' : ''} au tarif réseau${net.withCatalogue ? ', complétée par le catalogue' : ''}`
+    : `Aucun verre configuré pour ${net.name} (Paramètres › Réseaux)${net.withCatalogue ? ' : tarifs catalogue' : ''}`;
+}
 function buildFrameSeg() {
   $('#frameSeg').innerHTML = cfg.frames.map(f => `<button data-frame="${f.id}">${esc(f.name)}</button>`).join('');
 }
@@ -382,6 +413,7 @@ function renderEntry() {
 
   const f = frameDef();
   $$('#frameSeg button').forEach(b => b.classList.toggle('on', b.dataset.frame === S.frame.type));
+  renderNet();
   const minMat = matsSorted().find(m => m.index >= (f?.minIndex || 0));
   $('#frameNote').innerHTML = (isClassAFrame() ? '<b class="classA">Classe A</b> ' : '') + (f && f.minIndex > 1.5 && minMat ? `Monture ${esc(f.name.toLowerCase())} : <b>${esc(minMat.name)}</b> minimum.` : '');
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
@@ -405,6 +437,7 @@ function renderRecap() {
     <div class="blk"><small>Correction</small>${eye('od')}${eye('og')}</div>
     <div class="blk"><small>Mesures${v ? ' · ' + v : ''}</small><span>${mes.join(' · ') || '—'}</span></div>
     <div class="blk"><small>Monture</small><span>${esc(frameDef()?.name || '')}${frame != null ? ' · ' + eur(frame) + ' €' : ''}${isClassAFrame() ? ' <b class="classA">Classe A</b>' : ''}</span></div>
+    ${curNet() ? `<div class="blk"><small>Réseau</small><span>${esc(curNet().name)}</span></div>` : ''}
     ${isMixed() ? `<div class="blk"><small>Équipement</small><span>Progressif ${eyeName(progEye())} + unifocal</span></div>` : ''}
     <div class="blk edit">✎ Modifier</div>`;
 }
@@ -474,6 +507,7 @@ function cardHTML(o, i) {
   // toutes les options actives du verre, lisibles par le client
   const feats = [];
   if (o.classA) feats.push('100 % Santé');
+  if (o.net) feats.push(`Tarif ${curNet().name}`);
   if (o.g.track) feats.push('Track');
   if (o.g.fit) feats.push(v === 'fit' ? 'FIT recommandé' : 'Personnalisé FIT');
   if (o.g.antifatigue) feats.push(`Anti-fatigue${boostOf(o.g) ? ' ' + boostOf(o.g).replace('.', ',') : ''}`);
@@ -828,6 +862,12 @@ function bindMain() {
   });
   $('#mesGrid').addEventListener('input', e => { const id = e.target.dataset.mes; if (!id) return; S.mes[id] = e.target.value; renderEntry(); });
   $('#mesGrid').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.dataset.mes) { const all = $$('[data-mes]'); const n = all[all.indexOf(e.target) + 1]; (n || $('#framePrice')).focus(); } });
+  // Réseau : un seul à la fois, re-clic pour décocher
+  $('#netSeg').addEventListener('click', e => {
+    const b = e.target.closest('[data-net]'); if (!b) return;
+    S.network = S.network === b.dataset.net ? null : b.dataset.net;
+    S.pos = 0; renderEntry();
+  });
   // Monture
   $('#frameSeg').addEventListener('click', e => {
     const b = e.target.closest('[data-frame]'); if (!b) return;
@@ -923,7 +963,7 @@ function resetClient() {
   S = blankClient();
   $$('[data-rx]').forEach(i => { i.value = ''; i.classList.remove('invalid'); i.title = ''; });
   $('#framePrice').value = '';
-  buildMesures(); buildFrameSeg(); showStep(1);
+  buildMesures(); buildFrameSeg(); buildNetSeg(); showStep(1);
   $('[data-rx="od.sph"]').focus();
 }
 
@@ -934,7 +974,7 @@ function route() {
   if (admin) { $('#stepInput').hidden = $('#stepPodium').hidden = true; window.Admin.open(); return; }
   // les paramètres ont pu changer : on remet l'état client en cohérence
   if (!cfg.frames.some(f => f.id === S.frame.type)) S.frame.type = cfg.frames[0]?.id;
-  buildMesures(); buildFrameSeg(); showStep(S.step);
+  buildMesures(); buildFrameSeg(); buildNetSeg(); showStep(S.step);
 }
 
 function checkUpdate() {

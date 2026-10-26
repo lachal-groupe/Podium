@@ -6,6 +6,8 @@
   const cfg = () => P.cfg;
   const slug = s => String(s).trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   let tab = 'gammes', priceGamme = null, priceField = 'pv';
+  let netId = null, netGamme = null; // page Réseaux : grille affichée, gamme dont on saisit les tarifs
+  const nf = { q: '', show: 'all', type: 'all' };
   const gf = { q: '', show: 'on', type: 'all' }; // filtres de la liste des gammes
 
   const root = () => $('#viewAdmin');
@@ -67,7 +69,7 @@
     dots();
   }
 
-  const TABS = [['gammes', 'Gammes'], ['tarifs', 'Tarifs PV / PA'], ['matieres', 'Matières & traitements'], ['options', 'Options & règles'], ['sauvegarde', 'Import / sauvegarde']];
+  const TABS = [['gammes', 'Gammes'], ['tarifs', 'Tarifs PV / PA'], ['matieres', 'Matières & traitements'], ['options', 'Options & règles'], ['reseaux', 'Réseaux'], ['sauvegarde', 'Import / sauvegarde']];
 
   function render() {
     root().innerHTML = `
@@ -77,7 +79,7 @@
       <div id="tabBody"></div>`;
     $('#adminBack').onclick = () => location.hash = '';
     $$('[data-tab]', root()).forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); });
-    ({ gammes: tabGammes, tarifs: tabTarifs, matieres: tabMatieres, options: tabOptions, sauvegarde: tabSauvegarde })[tab]();
+    ({ gammes: tabGammes, tarifs: tabTarifs, matieres: tabMatieres, options: tabOptions, reseaux: tabReseaux, sauvegarde: tabSauvegarde })[tab]();
   }
 
   /* ---------- Liaison générique champ ↔ config ---------- */
@@ -303,6 +305,110 @@
     bindAll($('#tabBody'));
     $('#addTh').onclick = () => { c.thinning.push({ max: 99, index: 1.74 }); save(); tabOptions(); };
     $$('[data-delth]').forEach(b => b.onclick = () => { c.thinning.splice(+b.dataset.delth, 1); save(); tabOptions(); });
+  }
+
+  /* ---------- Réseaux de soins : une page par grille ---------- */
+  // Chaque grille liste les verres à proposer quand le client en dépend, et leur tarif réseau.
+  // Le tarif est rattaché au code EDI de la référence (comme le fera AreaGRILLE) ; case vide : prix catalogue.
+  function tabReseaux() {
+    const c = cfg();
+    c.networks = c.networks || [];
+    if (!c.networks.some(n => n.id === netId)) netId = c.networks[0]?.id || null;
+    const net = c.networks.find(n => n.id === netId);
+    const ni = c.networks.indexOf(net);
+    const nav = `<div class="row" style="margin-bottom:14px;gap:8px">${c.networks.map(n => `<button class="btn ${n.id === netId ? 'primary' : ''}" data-net="${esc(n.id)}">${esc(n.name)} <small style="opacity:.7" data-ncount="${esc(n.id)}">${(n.gammes || []).length}</small></button>`).join('')}<button class="btn ghost" id="netAdd">＋ Réseau</button></div>`;
+    if (!net) { $('#tabBody').innerHTML = `<div class="card-admin">${nav}<p class="sub">Aucun réseau. Ajoutez-en un.</p></div>`; return bindNav(); }
+    net.gammes = net.gammes || []; net.prices = net.prices || {};
+    const key = (g, k) => g.prices[k]?.code || `${g.id}|${k}`;
+    const nPrices = g => Object.keys(g.prices).filter(k => typeof net.prices[key(g, k)] === 'number').length;
+    $('#tabBody').innerHTML = `<div class="card-admin">${nav}
+      <div class="row" style="justify-content:space-between;align-items:flex-end">
+        <div class="row"><label class="stack" style="gap:4px"><small>Nom du réseau</small>${inp(`networks.${ni}.name`)}</label>
+          <label class="row" style="gap:8px">${inp(`networks.${ni}.withCatalogue`, 'bool')}<span>Compléter avec les verres hors réseau<br><small style="color:var(--ink-3)">gammes affichées, au prix catalogue</small></span></label></div>
+        <button class="btn danger" id="netDel">Supprimer ce réseau</button></div>
+      <p class="sub" style="margin-top:12px">Quand ce réseau est coché à l'étape 3, le podium ne propose que les gammes cochées ci-dessous, à leur tarif réseau (les options Précal et Transitions s'y ajoutent).
+        Une gamme masquée dans « Gammes » peut être proposée ici : elle n'apparaîtra qu'avec ce réseau.
+        <b>Tarifs AreaGRILLE :</b> ils viendront remplir ces cases automatiquement dès que l'accès sera disponible.</p></div>
+    <div class="card-admin"><h3>Verres proposés — ${esc(net.name)}</h3>
+      <div class="row" style="margin:10px 0 12px">
+        <input type="text" id="nq" placeholder="Rechercher une gamme…" value="${esc(nf.q)}" style="max-width:280px;text-align:left">
+        <div class="seg" id="nshow"><button data-v="in" class="${nf.show === 'in' ? 'on' : ''}">Dans la grille (${net.gammes.length})</button><button data-v="all" class="${nf.show === 'all' ? 'on' : ''}">Toutes (${c.gammes.length})</button></div>
+        <div class="seg" id="ntype"><button data-v="all" class="${nf.type === 'all' ? 'on' : ''}">Tous types</button><button data-v="prog" class="${nf.type === 'prog' ? 'on' : ''}">Progressifs</button><button data-v="unif" class="${nf.type === 'unif' ? 'on' : ''}">Unifocaux</button></div>
+        <button class="btn small" id="nAllShown">Ajouter toutes les gammes affichées</button>
+      </div>
+      <div class="scroll-x" id="ntable"></div></div>
+    <div class="card-admin" id="nprices"></div>`;
+    const draw = () => {
+      const q = nf.q.trim().toLowerCase();
+      const list = c.gammes.filter(g => (nf.show === 'all' || net.gammes.includes(g.id)) && (nf.type === 'all' || g.type === nf.type) && (!q || (g.name + ' ' + (g.source || '')).toLowerCase().includes(q)))
+        .sort((a, b) => (net.gammes.includes(b.id) - net.gammes.includes(a.id)) || (a.type > b.type ? -1 : a.type < b.type ? 1 : a.order - b.order));
+      $('#ntable').innerHTML = list.length ? `<table class="tbl"><thead><tr><th>Proposé</th><th>Nom affiché</th><th>Libellé catalogue</th><th>Affichée hors réseau</th><th>Tarifs réseau</th><th></th></tr></thead>
+        <tbody>${list.map(g => { const on = net.gammes.includes(g.id), n = nPrices(g), t = Object.keys(g.prices).length;
+          return `<tr class="${on ? '' : 'off'}"><td><label class="switch"><input type="checkbox" data-ng="${g.id}" ${on ? 'checked' : ''}><span></span></label></td>
+          <td>${esc(g.name)}</td><td><small>${esc(g.source || '—')}</small><br><small style="color:var(--ink-3)">${g.type === 'prog' ? 'Progressif' : 'Unifocal'}</small></td>
+          <td>${g.enabled ? 'Oui' : '<small style="color:var(--ink-3)">Non : réseau uniquement</small>'}</td>
+          <td>${on ? `${n} / ${t}${n ? '' : ' <small style="color:var(--ink-3)">(prix catalogue)</small>'}` : '—'}</td>
+          <td>${on ? `<button class="btn small ${netGamme === g.id ? 'primary' : ''}" data-np="${g.id}">Saisir les tarifs</button>` : ''}</td></tr>`; }).join('')}</tbody></table>`
+        : '<p class="sub">Aucune gamme ne correspond.</p>';
+      $$('[data-ng]').forEach(el => el.onchange = () => {
+        const id = el.dataset.ng;
+        net.gammes = el.checked ? [...new Set([...net.gammes, id])] : net.gammes.filter(x => x !== id);
+        if (!el.checked && netGamme === id) netGamme = null;
+        $$(`[data-ncount="${net.id}"]`).forEach(x => x.textContent = net.gammes.length);
+        save(); draw(); prices();
+      });
+      $$('[data-np]').forEach(b => b.onclick = () => { netGamme = b.dataset.np; draw(); prices(); $('#nprices').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    };
+    // grille de saisie : mêmes lignes que l'onglet Tarifs (matière + BUC/EPS × traitement), une colonne par teinte
+    const prices = () => {
+      const g = net.gammes.includes(netGamme) && c.gammes.find(x => x.id === netGamme);
+      const box = $('#nprices');
+      if (!g) { box.innerHTML = `<p class="sub">Choisissez « Saisir les tarifs » sur une gamme de la grille.</p>`; return; }
+      const keys = Object.keys(g.prices).map(k => k.split('|'));
+      const mats = [...c.materials].sort((a, b) => a.index - b.index), groups = [];
+      for (const m of mats) for (const f of ['', 'buc', 'eps']) {
+        const trs = c.treatments.filter(t => keys.some(k => k[0] === m.id && k[1] === f && k[2] === t.id));
+        if (trs.length) groups.push({ m, f, trs });
+      }
+      const fname = f => f ? (c.filters?.find(x => x.id === f)?.name || f.toUpperCase()) : '';
+      const cell = (m, f, t, ti) => {
+        const k = `${m}|${f}|${t}|${ti}`, p = g.prices[k];
+        if (!p) return '<td></td>';
+        const v = net.prices[key(g, k)];
+        return `<td><input type="text" inputmode="decimal" data-nk="${esc(key(g, k))}" class="${v == null ? 'empty' : ''}" value="${v == null ? '' : String(v).replace('.', ',')}" placeholder="${p.pv == null ? '—' : eur(p.pv)}" title="${esc((p.code ? 'Code EDI ' + p.code : '') + (p.pv != null ? ' · catalogue ' + eur(p.pv) + ' €' : ''))}"></td>`;
+      };
+      box.innerHTML = `<div class="row" style="justify-content:space-between"><h3>Tarifs ${esc(net.name)} — ${esc(g.name)}</h3><button class="btn small" id="nClear">Vider les tarifs de cette gamme</button></div>
+        <p class="sub">Prix <b>par verre</b> dans le réseau. En gris : prix catalogue, utilisé tant que la case est vide. Survolez une case pour voir le code EDI.</p>
+        <div class="scroll-x"><table class="tbl grid-price"><thead><tr><th>Matière</th><th>Traitement</th>${c.tints.map(t => `<th>${esc(t.name)}</th>`).join('')}</tr></thead>
+        <tbody>${groups.map(({ m, f, trs }) => trs.map((t, k) => `<tr>${k === 0 ? `<td class="mat" rowspan="${trs.length}">${esc(m.name)} ${esc(fname(f))}<br><small>${m.index}</small></td>` : ''}<td>${esc(t.name)}</td>${c.tints.map(ti => cell(m.id, f, t.id, ti.id)).join('')}</tr>`).join('')).join('')}</tbody></table></div>`;
+      $$('[data-nk]', box).forEach(el => el.addEventListener('change', () => {
+        const v = num(el.value);
+        if (v == null) delete net.prices[el.dataset.nk]; else net.prices[el.dataset.nk] = v;
+        el.classList.toggle('empty', v == null); el.value = v == null ? '' : String(v).replace('.', ',');
+        save(); draw();
+      }));
+      $('#nClear').onclick = () => {
+        if (!confirm(`Vider les tarifs ${net.name} de ${g.name} ?`)) return;
+        Object.keys(g.prices).forEach(k => delete net.prices[key(g, k)]); save(); draw(); prices();
+      };
+    };
+    function bindNav() {
+      $$('[data-net]').forEach(b => b.onclick = () => { netId = b.dataset.net; netGamme = null; tabReseaux(); });
+      $('#netAdd').onclick = () => {
+        const name = (prompt('Nom du réseau ?') || '').trim(); if (!name) return;
+        let id = slug(name) || 'reseau'; while (c.networks.some(n => n.id === id)) id += '-2';
+        c.networks.push({ id, name: name.toUpperCase(), gammes: [], prices: {}, withCatalogue: false });
+        netId = id; save('Réseau ajouté'); tabReseaux();
+      };
+    }
+    bindNav();
+    bindAll($('#tabBody').firstElementChild, el => { if (el.dataset.bind.endsWith('.name')) tabReseaux(); });
+    $('#netDel').onclick = () => { if (!confirm(`Supprimer le réseau ${net.name} et ses tarifs ?`)) return; c.networks.splice(ni, 1); netId = null; save('Réseau supprimé'); tabReseaux(); };
+    $('#nq').oninput = e => { nf.q = e.target.value; draw(); };
+    $$('#nshow button').forEach(b => b.onclick = () => { nf.show = b.dataset.v; tabReseaux(); });
+    $$('#ntype button').forEach(b => b.onclick = () => { nf.type = b.dataset.v; tabReseaux(); });
+    $('#nAllShown').onclick = () => { net.gammes = [...new Set([...net.gammes, ...c.gammes.filter(g => g.enabled).map(g => g.id)])]; save('Gammes affichées ajoutées'); tabReseaux(); };
+    draw(); prices();
   }
 
   /* ---------- Import / sauvegarde ---------- */

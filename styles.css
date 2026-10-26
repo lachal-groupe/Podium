@@ -416,3 +416,10 @@ body[data-profile="user"] #btnAdmin{opacity:.5}
 .summary .send-meo{background:#fff;color:var(--brand-2);border:0;font-weight:800;font-size:12.5px;line-height:1.2;padding:8px 14px;border-radius:12px;text-align:left}
 .summary .send-meo:hover{background:#ffe08a}
 @media print{.topbar,.filters,.arrow,.dots,.card-f{display:none}}
+
+/* Réseaux de soins : un seul choix, re-clic pour décocher */
+.net-seg{display:flex;flex-wrap:wrap;gap:8px}
+.net-seg button{padding:9px 16px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:700 13px/1 inherit;letter-spacing:.03em;text-transform:uppercase;cursor:pointer;transition:all .15s}
+.net-seg button:hover{border-color:var(--brand)}
+.net-seg button.on{background:var(--brand);border-color:var(--brand);color:#fff;box-shadow:0 4px 14px rgba(29,79,215,.3)}
+.feat.net{background:#0f8a6c;color:#fff}
