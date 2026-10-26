@@ -423,3 +423,9 @@ body[data-profile="user"] #btnAdmin{opacity:.5}
 .net-seg button:hover{border-color:var(--brand)}
 .net-seg button.on{background:var(--brand);border-color:var(--brand);color:#fff;box-shadow:0 4px 14px rgba(29,79,215,.3)}
 .feat.net{background:#0f8a6c;color:#fff}
+
+/* Réseau : avertissements d'amincissement, recommandation FIT */
+.lens{position:relative}
+.lens .warn-i{position:absolute;top:4px;right:6px;font-style:normal;font-size:13px;color:#c77700}
+.mat-warn{margin:8px 0 2px;padding:8px 12px;border-radius:10px;background:#fff4e0;border:1px solid #f3c77a;color:#7a4a00;font-size:12.5px;line-height:1.4}
+.fit-reco{align-self:center}

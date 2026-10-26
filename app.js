@@ -52,6 +52,7 @@ function migrate(c) {
   for (const g of c.gammes) {
     const dg = window.PODIUM_DEFAULT.gammes.find(x => x.id === g.id); if (!dg) continue;
     if (g.keywords === undefined) g.keywords = dg.keywords || '';
+    if (dg.fitAuto && !g.fit) g.fit = true; // gammes individualisées d'office (Varilux S2, Physio 3D)
     if (!g.base && dg.base) g.base = dg.base;
     if (g.fiche && !g.fiche.images) g.fiche.images = clone(dg.fiche?.images || []);
     for (const [k, p] of Object.entries(g.prices)) if (!p.lab && dg.prices[k]?.lab) p.lab = dg.prices[k].lab;
@@ -392,6 +393,7 @@ function offers() {
     if (S.opts.antifatigue ? !g.antifatigue || (boostOf(g) && boostOf(g) !== curBoost()) : boostOf(g)) continue;
     if (track) { if (!g.track) continue; }              // CVP renseigné : uniquement des verres Track
     else if (g.track) continue;                        // un verre Track n'est proposé qu'avec un CVP
+    else if (curNet()) { /* grille tarifaire : verres FIT et non FIT proposés ensemble, mesures non prises en compte */ }
     else if (verdict === 'fit' && !S.opts.noFit && !g.fit) continue; // FIT recommandé : uniquement des verres FIT
     else if ((verdict === 'useless' || (verdict === 'fit' && S.opts.noFit)) && g.fit) continue; // standard, ou « Non FIT » : pas de FIT
     for (const tr of cfg.treatments) {
@@ -572,7 +574,9 @@ function renderFilters() {
       : '<small>Eyezen Boost</small>') +
     tog('panierA', 'Panier A', '100 % Santé') +
     // FIT recommandé : l'opticien peut sortir de la préconisation et proposer des verres standard
-    (fitVerdict() === 'fit' && !trackOnly() ? tog('noFit', 'Non FIT', 'Ignorer la préconisation FIT') : '');
+    (fitVerdict() === 'fit' && !trackOnly() && !curNet() ? tog('noFit', 'Non FIT', 'Ignorer la préconisation FIT') : '') +
+    // en réseau, la recommandation FIT est seulement indiquée
+    (fitVerdict() === 'fit' && !trackOnly() && curNet() ? '<span class="pill brand fit-reco">✓ Verres FIT recommandés</span>' : '');
   renderLenses();
 }
 let arOpen = false;
@@ -599,15 +603,32 @@ function renderLenses() {
       <button class="link" id="matInfo">Amincissement ?</button></div>
     <div class="lens-row">${rows.map(({ m, t }) => {
       const dis = m.index < minFrame;
-      return `<button class="lens ${sel === m.id ? 'on' : ''} ${dis ? 'dis' : ''}" data-mat="${m.id}" ${dis ? 'disabled title="Non compatible avec ce type de monture"' : ''}>
-        ${lens(t)}<span class="ln">${esc(m.name)}${recMat?.id === m.id ? ' <i class="star">★</i>' : ''}</span>
+      const w = dis ? [] : matWarnings(m);
+      return `<button class="lens ${sel === m.id ? 'on' : ''} ${dis ? 'dis' : ''}" data-mat="${m.id}" ${dis ? 'disabled title="Non compatible avec ce type de monture"' : w.length ? `title="${esc('Attention : ' + w.join(' · '))}"` : ''}>
+        ${w.length ? '<i class="warn-i" aria-hidden="true">⚠</i>' : ''}${lens(t)}<span class="ln">${esc(m.name)}${recMat?.id === m.id ? ' <i class="star">★</i>' : ''}</span>
 </button>`;
     }).join('')}</div>
+    ${(() => { const m = cfg.materials.find(x => x.id === sel), w = m ? matWarnings(m) : []; return w.length ? `<div class="mat-warn">⚠ <b>${esc(m.name)}</b> : ${w.map(esc).join(' · ')}</div>` : ''; })()}
     <div class="lens-f">${S.material === 'auto' ? '<span class="pill brand">★ Conseillée automatiquement</span>' : '<button class="link" id="matAuto">↺ Revenir à la matière conseillée</button>'}</div>`;
 }
 
 /* ---------- Étape 2 : podium ---------- */
 let current = [];
+// Avertissements d'amincissement en réseau : matière non autorisée par la grille, plus forte que ce que demandent
+// la correction et la monture (plus d'un cran au-dessus de la matière conseillée), ou non valorisée (même tarif)
+function matWarnings(m) {
+  const net = curNet();
+  if (!net || S.opts.panierA || !m) return [];
+  const w = [], rec = matsSorted().find(x => x.index >= recommendedIndex());
+  if (net.rules && !netMatAllowed(net.rules, m.id, eyeVals())) w.push(`non autorisée par la grille ${net.name} pour cette correction`);
+  if (rec && m.index - rec.index > 0.1 + 1e-9) w.push(`plus forte que nécessaire pour la correction et la monture (conseil : ${rec.name})`);
+  const o = current[0];
+  if (o && !o.classA && rec && m.index > rec.index) {
+    const pm = bestFilt(o.g, m.id, o.tr.id, o.tint, [o.filt])?.p, pr = bestFilt(o.g, rec.id, o.tr.id, o.tint, [o.filt])?.p;
+    if (pm != null && pr != null && pm <= pr + 0.001) w.push(`non valorisée par la grille : même tarif qu'en ${rec.name}`);
+  }
+  return w;
+}
 const perView = () => { const w = $('#viewport').clientWidth; return w < 540 ? 1 : w < 740 ? 2 : w < 940 ? 3 : 4; };
 
 function cardHTML(o, i) {
@@ -803,7 +824,9 @@ function renderMini() {
     else if (!o.blueMat) chips.push('Sans matière filtrante');
     if (o.ar) chips.push(`Anti-reflets : ${o.arSel.length ? o.arSel.map(id => cfg.treatments.find(t => t.id === id)?.name).filter(Boolean).join(', ') : 'tous'}`);
     if (o.photo) chips.push(cfg.tints.find(t => t.id === o.tint)?.name || 'Transitions');
-    if (o.noFit && fitVerdict() === 'fit' && !trackOnly()) chips.push('Non FIT');
+    if (o.noFit && fitVerdict() === 'fit' && !trackOnly() && !curNet()) chips.push('Non FIT');
+    if (fitVerdict() === 'fit' && !trackOnly() && curNet()) chips.push('Verres FIT recommandés');
+    if (mat && matWarnings(mat).length) chips.push('⚠ Amincissement à vérifier');
     if (o.antifatigue) chips.push(`Anti-fatigue · Boost ${String(curBoost() || '').replace('.', ',')}`);
   }
   $('#ctrlMini').innerHTML = `<span class="mini-l">Options</span>${chips.map(c => `<span class="pill">${esc(c)}</span>`).join('') || '<span class="pill">Aucune option</span>'}<span class="mini-e">⚙ Modifier les options</span>`;
