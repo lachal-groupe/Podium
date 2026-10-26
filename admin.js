@@ -312,6 +312,11 @@
       <p class="sub">Déposez l'export « Verres_PA_PV.xlsx » (colonnes État, Code fournisseur, Code EDI, Libellé verre, Géométrie, Prix d'achat, Prix de vente). Chaque libellé est découpé en gamme / matière / BUC-EPS / Transitions / traitement. Les prix des gammes reconnues sont remplacés ; les nouvelles gammes sont créées masquées ; noms, phrases, fiches et réglages sont conservés. Les verres solaires et miroirs sont ignorés.</p>
       <div class="drop" id="drop">Glissez le fichier .xlsx ici ou <label class="link" style="cursor:pointer">choisissez-le<input type="file" id="xlsFile" accept=".xlsx,.xls" hidden></label></div>
       <div class="log" id="xlsLog"></div></div>
+    <div class="card-admin"><h3>Diffuser aux magasins</h3>
+      <p class="sub">Vos modifications ne sont enregistrées que dans ce navigateur : les postes « Magasin » ne les voient qu'après publication.
+        1. Cliquez sur « Préparer la publication » (le fichier <b>podium-parametres.json</b> arrive dans Téléchargements).
+        2. Double-cliquez sur <b>Publier le site.cmd</b> (dossier PODIUM › outils) : il récupère ce fichier et met le site à jour pour tous les postes.</p>
+      <div class="row"><button class="btn primary" id="pubCfg">Préparer la publication</button></div></div>
     <div class="card-admin"><h3>Sauvegarde et partage</h3>
       <p class="sub">Les paramètres sont enregistrés dans ce navigateur. Pour les sauvegarder ou les copier sur un autre poste, exportez-les puis importez-les. « Exporter data.js » produit le fichier à déposer dans le dossier de l'application pour diffuser la configuration à tous les postes.</p>
       <div class="row"><button class="btn primary" id="expJson">Exporter (.json)</button><label class="btn">Importer (.json)<input type="file" id="impJson" accept=".json" hidden></label><button class="btn" id="expJs">Exporter data.js</button><button class="btn danger" id="resetCfg">Revenir à la configuration publiée</button></div></div>
@@ -322,6 +327,7 @@
     ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
     drop.addEventListener('drop', e => e.dataTransfer.files[0] && importXlsx(e.dataTransfer.files[0]));
     $('#xlsFile').onchange = e => e.target.files[0] && importXlsx(e.target.files[0]);
+    $('#pubCfg').onclick = () => { download('podium-parametres.json', JSON.stringify(exportable(), null, 1), 'application/json'); toast('Fichier prêt : lancez « Publier le site.cmd »'); };
     $('#expJson').onclick = () => download(`podium-config-${today()}.json`, JSON.stringify(exportable(), null, 1), 'application/json');
     $('#expJs').onclick = () => download('data.js', `// Configuration Podium L4C84L exportée le ${today()}\nwindow.PODIUM_DEFAULT = ${JSON.stringify(exportable(), null, 1)};\n`, 'text/javascript');
     $('#impJson').onchange = e => {

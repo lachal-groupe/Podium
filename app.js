@@ -13,6 +13,8 @@ const clone = o => JSON.parse(JSON.stringify(o));
 let cfgNotice = '';
 let cfg; // chargée au démarrage, une fois l'accès ouvert
 function loadCfg() {
+  // profil Magasin (user) : toujours la configuration publiée, jamais une copie locale
+  if (PROFILE === 'user') { try { localStorage.removeItem(LS_CFG); } catch (e) {} return clone(window.PODIUM_DEFAULT); }
   try {
     const s = localStorage.getItem(LS_CFG);
     if (s) {
@@ -60,7 +62,7 @@ const blankClient = () => ({
   step: 1, rx: { od: {}, og: {} }, mes: defaultMes(), alt: 'dvo', mixed: false,
   frame: { type: cfg.frames[0]?.id, price: null }, mode: 'auto',
   // blueMat coché par défaut : les verres BUC / EPS sont présentés ; décoché : uniquement les verres sans BUC / EPS
-  opts: { precal: false, blue: false, blueMat: true, blueTr: false, ar: false, arSel: [], photo: false, tint: 'trs', color: null, antifatigue: false, boost: null, panierA: false },
+  opts: { precal: false, blue: false, blueMat: true, blueTr: false, ar: false, arSel: [], photo: false, tint: 'trs', color: null, antifatigue: false, boost: null, panierA: false, noFit: false },
   material: 'auto', pos: 0, selected: null,
 });
 let S;
@@ -263,8 +265,8 @@ function offers() {
     if (S.opts.antifatigue ? !g.antifatigue || (boostOf(g) && boostOf(g) !== curBoost()) : boostOf(g)) continue;
     if (track) { if (!g.track) continue; }              // CVP renseigné : uniquement des verres Track
     else if (g.track) continue;                        // un verre Track n'est proposé qu'avec un CVP
-    else if (verdict === 'fit' && !g.fit) continue;    // FIT recommandé : uniquement des verres FIT
-    else if (verdict === 'useless' && g.fit) continue; // mesures standard : pas de FIT
+    else if (verdict === 'fit' && !S.opts.noFit && !g.fit) continue; // FIT recommandé : uniquement des verres FIT
+    else if ((verdict === 'useless' || (verdict === 'fit' && S.opts.noFit)) && g.fit) continue; // standard, ou « Non FIT » : pas de FIT
     for (const tr of cfg.treatments) {
       if (tr.shown === false) continue;
       if (arSel.length && !arSel.includes(tr.id)) continue;
@@ -396,7 +398,8 @@ function renderRecap() {
     return `<span><i>${eyeName(e)}</i>${parts.join(' ')}</span>`;
   };
   const mes = visibleMes().filter(m => num(S.mes[m.id]) != null && !isDefault(m)).map(m => `${esc(m.name)} ${String(S.mes[m.id]).replace('.', ',')}`);
-  const v = trackOnly() ? 'Track (CVP)' : { fit: 'FIT recommandé', useless: 'FIT inutile', err: 'Mesure à vérifier' }[fitVerdict()];
+  const v = trackOnly() ? 'Track (CVP)' : fitVerdict() === 'fit' && S.opts.noFit ? 'FIT recommandé · non retenu'
+    : { fit: 'FIT recommandé', useless: 'FIT inutile', err: 'Mesure à vérifier' }[fitVerdict()];
   const frame = num(S.frame.price);
   $('#recap').innerHTML = `
     <div class="blk"><small>Correction</small>${eye('od')}${eye('og')}</div>
@@ -425,7 +428,9 @@ function renderFilters() {
     tog('antifatigue', 'Anti-fatigue', '', S.opts.antifatigue
       ? `<select id="boostSel">${boostLevels().map(b => `<option value="${b}" ${b === curBoost() ? 'selected' : ''}>Boost ${b.replace('.', ',')}</option>`).join('')}</select>`
       : '<small>Eyezen Boost</small>') +
-    tog('panierA', 'Panier A', '100 % Santé');
+    tog('panierA', 'Panier A', '100 % Santé') +
+    // FIT recommandé : l'opticien peut sortir de la préconisation et proposer des verres standard
+    (fitVerdict() === 'fit' && !trackOnly() ? tog('noFit', 'Non FIT', 'Ignorer la préconisation FIT') : '');
   renderLenses();
 }
 let arOpen = false;
@@ -513,7 +518,7 @@ function renderPodium() {
   $('#podiumTitle').textContent = isMixed() ? 'Équipement progressif + unifocal' : isProg() ? 'Verres progressifs' : 'Verres unifocaux';
   $('#podiumCount').textContent = current.length ? `${current.length} proposition${current.length > 1 ? 's' : ''} · du plus abordable au plus premium` : '';
   if (!current.length) {
-    const why = trackOnly() ? (cfg.gammes.some(g => g.enabled && g.track) ? 'Seuls les verres Track sont proposés (CVP renseigné).' : 'CVP renseigné, mais aucune gamme Track n\'est active dans les paramètres.') : fitVerdict() === 'fit' ? 'Seuls les verres FIT sont proposés (FIT recommandé).' : '';
+    const why = trackOnly() ? (cfg.gammes.some(g => g.enabled && g.track) ? 'Seuls les verres Track sont proposés (CVP renseigné).' : 'CVP renseigné, mais aucune gamme Track n\'est active dans les paramètres.') : fitVerdict() === 'fit' && !S.opts.noFit ? 'Seuls les verres FIT sont proposés (FIT recommandé ; option « Non FIT » pour les verres standard).' : '';
     track.innerHTML = `<div class="empty" style="flex:1"><b>Aucun verre ne correspond</b>${why} Assouplissez les filtres (traitement, matière, lumière bleue, anti-fatigue…) ou activez/tarifez des gammes dans les paramètres.</div>`;
     track.style.transform = ''; $('#dots').innerHTML = ''; $('#prev').disabled = $('#next').disabled = true;
     renderSummary(); return;
@@ -655,6 +660,7 @@ function renderMini() {
     else if (!o.blueMat) chips.push('Sans matière filtrante');
     if (o.ar) chips.push(`Anti-reflets : ${o.arSel.length ? o.arSel.map(id => cfg.treatments.find(t => t.id === id)?.name).filter(Boolean).join(', ') : 'tous'}`);
     if (o.photo) chips.push(cfg.tints.find(t => t.id === o.tint)?.name || 'Transitions');
+    if (o.noFit && fitVerdict() === 'fit' && !trackOnly()) chips.push('Non FIT');
     if (o.antifatigue) chips.push(`Anti-fatigue · Boost ${String(curBoost() || '').replace('.', ',')}`);
   }
   $('#ctrlMini').innerHTML = `<span class="mini-l">Options</span>${chips.map(c => `<span class="pill">${esc(c)}</span>`).join('') || '<span class="pill">Aucune option</span>'}<span class="mini-e">⚙ Modifier les options</span>`;
@@ -852,6 +858,7 @@ function bindMain() {
     const t = e.target.closest('[data-opt]'); if (!t || t.classList.contains('locked')) return;
     S.opts[t.dataset.opt] = !S.opts[t.dataset.opt];
     if (t.dataset.opt === 'ar') arOpen = S.opts.ar;
+    if (t.dataset.opt === 'noFit') renderRecap();
     S.pos = 0; renderFilters(); renderPodium();
   });
   document.addEventListener('click', e => {
