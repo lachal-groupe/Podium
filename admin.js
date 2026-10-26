@@ -330,7 +330,8 @@
       <p class="sub" style="margin-top:12px">Quand ce réseau est coché à l'étape 3, le podium ne propose que les gammes cochées ci-dessous, à leur tarif réseau (les options Précal et Transitions s'y ajoutent).
         Une gamme masquée dans « Gammes » peut être proposée ici : elle n'apparaîtra qu'avec ce réseau.
         <b>Tarifs AreaGRILLE :</b> ils viendront remplir ces cases automatiquement dès que l'accès sera disponible.</p></div>
-    <div class="card-admin"><h3>Supplément selon la correction</h3>
+    ${net.rules ? rulesCard(net) : ''}
+    <div class="card-admin" ${net.rules ? 'hidden' : ''}><h3>Supplément selon la correction</h3>
       <p class="sub">Certaines grilles augmentent le prix selon la correction (relevé MyEasyOptic : seule Actil le fait). Le supplément de la correction témoin la plus proche s'ajoute au tarif réseau ; avec deux yeux différents, le plus élevé est retenu.${net.source ? ` Tarifs relevés : ${esc(net.source)}.` : ''}</p>
       <div class="scroll-x"><table class="tbl"><thead><tr><th>Correction témoin</th><th>Sphère</th><th>Cylindre</th><th>Progressif (€ / verre)</th><th>Unifocal (€ / verre)</th></tr></thead>
       <tbody>${(c.netClasses || []).map((k, i) => `<tr><td>${esc(k.name)}</td><td>${String(k.sph).replace('.', ',')}</td><td>${String(k.cyl).replace('.', ',')}</td>
@@ -416,6 +417,21 @@
     $$('#ntype button').forEach(b => b.onclick = () => { nf.type = b.dataset.v; tabReseaux(); });
     $('#nAllShown').onclick = () => { net.gammes = [...new Set([...net.gammes, ...c.gammes.filter(g => g.enabled).map(g => g.id)])]; save('Gammes affichées ajoutées'); tabReseaux(); };
     draw(); prices();
+  }
+
+  // Règles de grille (ex. Actil) : affichage des tables appliquées par le podium
+  function rulesCard(net) {
+    const R = net.rules, c = cfg(), heads = ['s ≤ 2', '2 < s ≤ 4', '4 < s ≤ 6', '6 < s ≤ 8', '8 < s ≤ 10', 's > 10'];
+    const mname = id => c.materials.find(m => m.id === id)?.name || id;
+    const tbl = t => `<table class="tbl"><thead><tr><th>${t === 'prog' ? 'Progressifs' : 'Unifocaux'}</th>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>${Object.entries(R.base[t] || {}).map(([m, row]) => `<tr><td>${esc(mname(m))}</td>${heads.map((_, i) => `<td>${row[i] == null ? '—' : eur(row[i]) + ' €'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    const sup = net.supp || {};
+    return `<div class="card-admin"><h3>Règles de la grille ${esc(net.name)}</h3>
+      <p class="sub">${esc(R.label || '')}. Le tarif relevé dans MyEasyOptic (sphère ≤ 2, sans cylindre) est ajusté selon la correction la plus forte des deux yeux :
+        base de la matière selon la sphère (tableaux ci-dessous), cylindre ${(R.cyl || []).map(x => `≤ ${String(x.max).replace('.', ',')} : +${x.supp} €`).join(' · ')}.
+        Indice maximum : ${(R.maxIndex || []).map(x => `s ≤ ${x.sph > 99 ? '∞' : x.sph} → ${x.index}${x.scOver != null ? ` (${x.indexSc} si s + c > ${x.scOver})` : ''}`).join(' · ')}.
+        Suppléments du réseau : Précal ${sup.precal ?? '—'} €, prisme ${sup.prism ?? '—'} €, photochromique ${sup.tint === 0 ? 'compris dans le tarif' : (sup.tint ?? '—') + ' €'}.</p>
+      <div class="scroll-x">${tbl('prog')}</div><div class="scroll-x" style="margin-top:10px">${tbl('unif')}</div></div>`;
   }
 
   /* ---------- Import / sauvegarde ---------- */

@@ -39,6 +39,7 @@ function migrate(c) {
     if (!n) { c.networks.push(clone(dn)); continue; }
     if (dn.source && dn.source !== n.source) Object.assign(n, { gammes: clone(dn.gammes), prices: clone(dn.prices), source: dn.source, corrSupp: clone(dn.corrSupp || n.corrSupp || null) });
     if (!n.corrSupp) n.corrSupp = clone(dn.corrSupp || { prog: [], unif: [] });
+    if (dn.rulesVersion && dn.rulesVersion !== n.rulesVersion) Object.assign(n, { rules: clone(dn.rules), supp: clone(dn.supp || null), rulesVersion: dn.rulesVersion });
   }
   if (!c.optionImages) c.optionImages = clone(window.PODIUM_DEFAULT.optionImages || {});
   // nouvelle version des fiches (textes du PDF Essilor, visuels) : remplace les fiches non retouchées dans les paramètres
@@ -201,7 +202,10 @@ function priceOf(g, mat, filt, tr, tint) {
   const k = `${mat}|${filt}|${tr}|${tint}`, p = g?.prices[k];
   if (!p) return null;
   const n = netPrice(g, k, p);
-  return n != null ? n : typeof p.pv === 'number' ? p.pv : null;
+  if (n != null) return n;
+  const net = curNet();
+  if (net?.rules && inNet(g, net)) return null; // grille à règles : matière non autorisée pour cette correction
+  return typeof p.pv === 'number' ? p.pv : null;
 }
 // Réseau de soins choisi à l'étape 3 : seuls les verres de sa grille sont proposés, à son tarif
 // (tarif rattaché au code EDI ; à défaut de tarif saisi, prix catalogue)
@@ -211,8 +215,40 @@ const inNet = (g, net = curNet()) => !!net && (net.gammes || []).includes(g.id);
 function netPrice(g, k, p) {
   const net = curNet();
   if (!net || !inNet(g, net)) return null;
+  if (net.rules) return rulePrice(net, g, k);
   const v = net.prices?.[netKey(g, k, p)];
   return typeof v === 'number' ? v + netCorrSupp(net, g.type) : null;
+}
+// Correction la plus forte des deux yeux (sphère et cylindre en valeur absolue, cylindre en convention positive)
+function rxStrength() {
+  let s = 0, c = 0, sc = 0;
+  for (const e of ['od', 'og']) {
+    const a = Math.abs(num(S.rx[e].sph) || 0), b = Math.abs(num(S.rx[e].cyl) || 0);
+    s = Math.max(s, a); c = Math.max(c, b); sc = Math.max(sc, a + b);
+  }
+  return { s, c, sc };
+}
+// Règles de grille (ex. Actil, fiches Essilor) : prix = part design + traitement (relevée dans MyEasyOptic pour une
+// sphère ≤ 2) − base de la matière relevée + base de la matière choisie pour la classe de sphère + supplément cylindre.
+// Matière absente de la base pour cette sphère, ou au-delà de l'indice maximum autorisé : verre non proposé.
+function rulePrice(net, g, k) {
+  const R = net.rules, base = R.base?.[g.type];
+  if (!base) return null;
+  const [mat, filt, tr, tint] = k.split('|');
+  const { s, c, sc } = rxStrength();
+  let ci = (R.sph || []).findIndex(x => s <= x); if (ci < 0) ci = (R.sph || []).length;
+  const bm = base[mat]?.[ci];
+  if (bm == null) return null;
+  const m = cfg.materials.find(x => x.id === mat);
+  const lim = (R.maxIndex || []).find(x => s <= x.sph);
+  if (m && lim && m.index > (sc > (lim.scOver ?? Infinity) ? lim.indexSc : lim.index) + 1e-9) return null;
+  const cyl = c > 0 ? ((R.cyl || []).find(x => c <= x.max)?.supp ?? 0) : 0;
+  for (const m0 of Object.keys(base)) {   // matière de référence relevée (Orma d'abord)
+    const k0 = `${m0}|${filt}|${tr}|${tint}`, p0 = g.prices[k0], b0 = base[m0]?.[0];
+    const v = p0 && net.prices?.[netKey(g, k0, p0)];
+    if (typeof v === 'number' && b0 != null) return v - b0 + bm + cyl;
+  }
+  return null;
 }
 // Supplément de la grille selon la correction (ex. Actil) : classe témoin la plus proche de chaque œil, la plus chère retenue
 function netCorrSupp(net, type) {
@@ -294,6 +330,12 @@ function offers() {
   const precal = S.opts.precal ? (+cfg.supplements.precal || 0) : 0;
   const tintDef = cfg.tints.find(t => t.id === tint);
   const supp = precal + (tintDef?.photo ? (+tintDef.supp || 0) : 0); // Précal + teinte Transitions, inclus dans le prix du verre
+  // verre au tarif d'un réseau qui a ses propres suppléments (ex. Actil : Précal 15 €, photochromique déjà dans le tarif)
+  const suppOf = g => {
+    const n = curNet();
+    if (!n?.supp || !inNet(g, n)) return supp;
+    return (S.opts.precal ? (n.supp.precal ?? (+cfg.supplements.precal || 0)) : 0) + (tintDef?.photo ? (n.supp.tint ?? (+tintDef.supp || 0)) : 0);
+  };
   // Filtre lumière bleue : « Matière » = BUC/EPS exigé (option active) ou simplement autorisé (option inactive) ;
   // « Matière + traitement » ajoute le traitement filtrant. Matière décochée : verres sans BUC/EPS.
   const allowed = !S.opts.blueMat ? [''] : S.opts.blue ? ['buc', 'eps'] : ['buc', 'eps', ''];
@@ -321,8 +363,8 @@ function offers() {
       if (!mat) continue;
       const filt = v.f;
       const pk = `${mat.id}|${filt}|${tr.id}|${tint}`;
-      const o = { key: `${g.id}|${pk}`, g, mat, filt, tr, tint, precal, price: v.p + supp, net: netPrice(g, pk, g.prices[pk]) != null };
-      if (mixed) { const u = unifPrice(mat.id, filt, tr.id, tint); o.unif = u ? { g: u.g, price: u.p + supp, key: `${mat.id}|${u.f}|${tr.id}|${tint}` } : null; }
+      const o = { key: `${g.id}|${pk}`, g, mat, filt, tr, tint, precal, price: v.p + suppOf(g), net: netPrice(g, pk, g.prices[pk]) != null };
+      if (mixed) { const u = unifPrice(mat.id, filt, tr.id, tint); o.unif = u ? { g: u.g, price: u.p + suppOf(u.g), key: `${mat.id}|${u.f}|${tr.id}|${tint}` } : null; }
       o.pair = mixed ? (o.unif ? o.price + o.unif.price : null) : o.price * 2;
       out.push(o);
     }
@@ -605,7 +647,7 @@ function renderSummary() {
   const o = current.find(x => x.key === S.selected);
   const frame = num(S.frame.price);
   const prisms = o && !o.classA ? prismEyes() : [];
-  const prismCost = prisms.length * (+cfg.supplements.prism || 0);
+  const prismCost = prisms.length * (o?.net && curNet()?.supp?.prism != null ? +curNet().supp.prism : (+cfg.supplements.prism || 0));
   const lenses = o ? o.pair + prismCost : null;
   const total = (frame || 0) + (lenses || 0);
   const tint = o && cfg.tints.find(t => t.id === o.tint);
