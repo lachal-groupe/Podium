@@ -33,6 +33,8 @@ const newNetwork = name => ({ id: name.toLowerCase().normalize('NFD').replace(/[
 function migrate(c) {
   if (!c.networks) c.networks = clone(window.PODIUM_DEFAULT.networks || NETWORKS.map(newNetwork));
   if (!c.netClasses) c.netClasses = clone(window.PODIUM_DEFAULT.netClasses || []);
+  if (!c.stores) c.stores = clone(window.PODIUM_DEFAULT.stores || []);
+  if (!c.stats) c.stats = clone(window.PODIUM_DEFAULT.stats || { url: '', token: '' });
   if (!c.noNetwork) c.noNetwork = clone(window.PODIUM_DEFAULT.noNetwork || { treatments: [], defaults: {} });
   // grilles relevées dans MyEasyOptic : un relevé plus récent remplace verres et tarifs de la copie locale
   for (const dn of window.PODIUM_DEFAULT.networks || []) {
@@ -41,6 +43,7 @@ function migrate(c) {
     if (dn.source && dn.source !== n.source) Object.assign(n, { gammes: clone(dn.gammes), prices: clone(dn.prices), source: dn.source, corrSupp: clone(dn.corrSupp || n.corrSupp || null) });
     if (!n.corrSupp) n.corrSupp = clone(dn.corrSupp || { prog: [], unif: [] });
     if (!n.treatments && dn.treatments) n.treatments = clone(dn.treatments);
+    if (dn.storeDiscount && n.storeDiscount == null) n.storeDiscount = true;
     if (dn.exclude) { n.exclude = clone(dn.exclude); n.excludeNote = dn.excludeNote; }
     if (!n.defaults && dn.defaults) n.defaults = clone(dn.defaults);
     if (dn.rulesVersion && dn.rulesVersion !== n.rulesVersion) Object.assign(n, { rules: clone(dn.rules), supp: clone(dn.supp || null), rulesVersion: dn.rulesVersion });
@@ -286,15 +289,29 @@ function rulePrice(net, g, k) {
   // individualisation (Santéclair) : décote si aucun œil n'atteint la condition
   if (R.fitRule && (R.fitRule.gammes ? R.fitRule.gammes.includes(g.id) : g.fit) && !eyes.some(x => ruleMatch(R.fitRule.needs, x))) v -= R.fitRule.minus;
   if (R.fitDiscount && g.fit && !fitJustified(R.fitDiscount)) v = Math.round(v * (1 - R.fitDiscount.rate) * 100) / 100;
-  return v;
+  return Math.round(v * storeFactor(net) * 100) / 100;
 }
 // Précal pris en charge par le réseau (Kalixia : seulement si |S + C| ≥ 2 ou |S + C + Add| ≥ 2 sur un œil)
 function netPrecal(n) {
-  const eyes = eyeVals(), P = n.supp;
+  const eyes = eyeVals(), P = n.supp, f = storeFactor(n);
+  if (P.precal == null) return null;
   if (P.precalIf && !eyes.some(x => x.sumSC >= P.precalIf || x.sumSCA >= P.precalIf)) return 0;
-  if (P.precalWhen && !eyes.some(x => ruleMatch(P.precalWhen, x))) return P.precalElse ?? 0;
-  return P.precal;
+  if (P.precalWhen && !eyes.some(x => ruleMatch(P.precalWhen, x))) return Math.round((P.precalElse ?? 0) * f * 100) / 100;
+  return Math.round(P.precal * f * 100) / 100;
 }
+/* ---------- Magasin (reçu de MyEasyOptic, sinon le dernier connu sur ce poste) ---------- */
+const normName = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/^\s*\d+\s*/, '').replace(/[^A-Z0-9]/g, '');
+function storeCtx() {
+  if (S.ctx?.magasin || S.ctx?.codeClient) return S.ctx;
+  try { return JSON.parse(localStorage.getItem('podium-magasin') || 'null') || {}; } catch (e) { return {}; }
+}
+function storeOf() {
+  const c = storeCtx(), list = cfg.stores || [];
+  return list.find(s => s.codeClient && String(s.codeClient) === String(c.codeClient || ''))
+    || list.find(s => c.magasin && normName(s.meo || s.name) === normName(c.magasin)) || null;
+}
+// remise négociée par le magasin (grilles Santéclair à 12, 14, 16 ou 18 %) : multiplie tous les montants du réseau
+const storeFactor = n => n?.storeDiscount ? 1 - (+storeOf()?.discounts?.[n.id] || 0) / 100 : 1;
 // Supplément de la grille selon la correction (ex. Actil) : classe témoin la plus proche de chaque œil, la plus chère retenue
 function netCorrSupp(net, type) {
   const cls = cfg.netClasses || [], sup = net.corrSupp?.[type];
@@ -482,8 +499,10 @@ function buildNetSeg() {
 function renderNet() {
   $$('#netSeg button').forEach(b => { const on = b.dataset.net === S.network; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
   const net = curNet(), n = net ? cfg.gammes.filter(g => inNet(g, net)).length : 0;
-  $('#netNote').textContent = !net ? 'Aucun réseau : tarifs catalogue' : n ? `Grille ${net.name} : ${n} gamme${n > 1 ? 's' : ''} au tarif réseau${net.withCatalogue ? ', complétée par le catalogue' : ''}`
-    : `Aucun verre configuré pour ${net.name} (Paramètres › Réseaux)${net.withCatalogue ? ' : tarifs catalogue' : ''}`;
+  const st = storeOf(), rem = net?.storeDiscount ? +st?.discounts?.[net.id] || 0 : null;
+  const remTxt = rem == null ? '' : st ? ` · remise ${st.name} : ${rem} %` : ' · magasin non identifié : tarif sans remise';
+  $('#netNote').textContent = (!net ? 'Aucun réseau : tarifs catalogue' : n ? `Grille ${net.name} : ${n} gamme${n > 1 ? 's' : ''} au tarif réseau${net.withCatalogue ? ', complétée par le catalogue' : ''}`
+    : `Aucun verre configuré pour ${net.name} (Paramètres › Réseaux)${net.withCatalogue ? ' : tarifs catalogue' : ''}`) + remTxt;
 }
 function buildFrameSeg() {
   $('#frameSeg').innerHTML = cfg.frames.map(f => `<button data-frame="${f.id}">${esc(f.name)}</button>`).join('');
@@ -548,7 +567,8 @@ function renderRecap() {
     <div class="blk"><small>Correction</small>${eye('od')}${eye('og')}</div>
     <div class="blk"><small>Mesures${v ? ' · ' + v : ''}</small><span>${mes.join(' · ') || '—'}</span></div>
     <div class="blk"><small>Monture</small><span>${esc(frameDef()?.name || '')}${frame != null ? ' · ' + eur(frame) + ' €' : ''}${isClassAFrame() ? ' <b class="classA">Classe A</b>' : ''}</span></div>
-    ${curNet() ? `<div class="blk"><small>Réseau</small><span>${esc(curNet().name)}</span></div>` : ''}
+    ${curNet() ? `<div class="blk"><small>Réseau</small><span>${esc(curNet().name)}${curNet().storeDiscount && storeOf() ? ` · −${+storeOf().discounts?.[curNet().id] || 0} %` : ''}</span></div>` : ''}
+    ${storeOf() || S.ctx?.client ? `<div class="blk"><small>Magasin${S.ctx?.client ? ' · client' : ''}</small><span>${esc(storeOf()?.name || storeCtx().magasin || '—')}${S.ctx?.client ? ' · ' + esc(S.ctx.client) : ''}</span></div>` : ''}
     ${isMixed() ? `<div class="blk"><small>Équipement</small><span>Progressif ${eyeName(progEye())} + unifocal</span></div>` : ''}
     <div class="blk edit">✎ Modifier</div>`;
 }
@@ -722,7 +742,7 @@ function renderSummary() {
   const o = current.find(x => x.key === S.selected);
   const frame = num(S.frame.price);
   const prisms = o && !o.classA ? prismEyes() : [];
-  const prismCost = prisms.length * (o?.net && curNet()?.supp?.prism != null ? +curNet().supp.prism : (+cfg.supplements.prism || 0));
+  const prismCost = prisms.length * (o?.net && curNet()?.supp?.prism != null ? Math.round(+curNet().supp.prism * storeFactor(curNet()) * 100) / 100 : (+cfg.supplements.prism || 0));
   const lenses = o ? o.pair + prismCost : null;
   const total = (frame || 0) + (lenses || 0);
   const tint = o && cfg.tints.find(t => t.id === o.tint);
@@ -758,6 +778,8 @@ window.addEventListener('message', e => {
 });
 function fromMeo(d) {
   resetClient();
+  S.ctx = d.ctx || null;
+  if (d.ctx?.magasin || d.ctx?.codeClient) try { localStorage.setItem('podium-magasin', JSON.stringify({ magasin: d.ctx.magasin, codeClient: d.ctx.codeClient })); } catch (e) {}
   for (const e of ['od', 'og']) {
     for (const f of ['sph', 'cyl', 'axe', 'add', 'prism', 'base']) {
       const v = (d.rx?.[e]?.[f] || '').replace(/°/g, '');
@@ -802,12 +824,38 @@ function sendToMeo() {
   if (tint?.photo && curColor()) supps.push({ code: curColor().code, lib: curColor().lib || '', name: `${tint.name} ${curColor().name}`, eyes: both });
   const prisms = o.classA ? [] : prismEyes();
   if (prisms.length) supps.push({ code: cfg.supplements.prismCode || '550', lib: 'Prisme standard', name: `Prisme standard ${prisms.map(eyeName).join('/')}`, eyes: prisms });
+  logStat(o, l);
   meo.postMessage({ type: 'podium-verres', v: 2, od: l.od.lab, og: l.og.lab, odCode: l.od.code, ogCode: l.og.code, supps, precal: !!o.precal }, MEO_ORIGIN);
   try { meo.focus(); } catch (e) {}
   // Podium a été ouvert par MyEasyOptic : on referme l'onglet (sans effet si Podium a été ouvert à la main)
   setTimeout(() => window.close(), 600);
   toast(`Envoyé : ${l.od.lab}${l.og.lab !== l.od.lab ? ' / ' + l.og.lab : ''}${supps.length ? ' + ' + supps.map(s => s.name).join(', ') : ''}`);
 }
+
+// Suivi d'utilisation (Google Sheets via Apps Script, adresse dans Paramètres › Magasins & suivi)
+function statRow(o, l) {
+  const c = storeCtx(), st = storeOf(), frame = num(S.frame.price) || 0;
+  const prisms = o.classA ? [] : prismEyes();
+  const prism = prisms.length * (o.net && curNet()?.supp?.prism != null ? +curNet().supp.prism * storeFactor(curNet()) : (+cfg.supplements.prism || 0));
+  // mesures FIT renseignées : au moins 3 champs (le cap de tête à sa valeur par défaut ne compte pas)
+  const mes = visibleMes().filter(m => num(S.mes[m.id]) != null && !(m.default != null && num(S.mes[m.id]) === +m.default)).length;
+  const d = new Date(), p2 = n => String(n).padStart(2, '0');
+  return {
+    token: cfg.stats?.token || '',
+    date: `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`,
+    magasin: st?.name || c.magasin || '', technicien: S.ctx?.technicien || '', client: S.ctx?.client || '',
+    mesuresFit: mes >= 3 ? 'oui' : 'non',
+    produit: l.od.lab + (l.og.lab !== l.od.lab ? ' / ' + l.og.lab : ''),
+    montant: Math.round((frame + (o.pair || 0) + prism) * 100) / 100,
+    reseau: curNet()?.name || 'Hors réseau',
+  };
+}
+function logStat(o, l) {
+  const url = cfg.stats?.url;
+  if (!url) return;
+  try { fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(statRow(o, l)) }); } catch (e) {}
+}
+window.PodiumStats = { statRow, logStat, storeOf, storeCtx };
 
 /* ---------- Navigation entre étapes ---------- */
 /* ---------- Repli de la zone options ---------- */

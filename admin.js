@@ -69,7 +69,7 @@
     dots();
   }
 
-  const TABS = [['gammes', 'Gammes'], ['tarifs', 'Tarifs PV / PA'], ['matieres', 'Matières & traitements'], ['options', 'Options & règles'], ['reseaux', 'Réseaux'], ['sauvegarde', 'Import / sauvegarde']];
+  const TABS = [['gammes', 'Gammes'], ['tarifs', 'Tarifs PV / PA'], ['matieres', 'Matières & traitements'], ['options', 'Options & règles'], ['reseaux', 'Réseaux'], ['magasins', 'Magasins & suivi'], ['sauvegarde', 'Import / sauvegarde']];
 
   function render() {
     root().innerHTML = `
@@ -79,7 +79,7 @@
       <div id="tabBody"></div>`;
     $('#adminBack').onclick = () => location.hash = '';
     $$('[data-tab]', root()).forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); });
-    ({ gammes: tabGammes, tarifs: tabTarifs, matieres: tabMatieres, options: tabOptions, reseaux: tabReseaux, sauvegarde: tabSauvegarde })[tab]();
+    ({ gammes: tabGammes, tarifs: tabTarifs, matieres: tabMatieres, options: tabOptions, reseaux: tabReseaux, magasins: tabMagasins, sauvegarde: tabSauvegarde })[tab]();
   }
 
   /* ---------- Liaison générique champ ↔ config ---------- */
@@ -453,6 +453,42 @@
       <p class="sub">${esc(R.label || '')}. Appliquées sur la correction de chaque œil (le plus favorable pour la matière, le plus cher pour les suppléments).</p>
       <ul class="sub" style="margin:8px 0 0 18px">${(R.notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul>
       ${R.base ? `<div class="scroll-x" style="margin-top:10px">${tbl('prog')}</div><div class="scroll-x" style="margin-top:10px">${tbl('unif')}</div>` : ''}</div>`;
+  }
+
+  /* ---------- Magasins (remise réseau négociée) et suivi d'utilisation ---------- */
+  function tabMagasins() {
+    const c = cfg(); c.stores = c.stores || []; c.stats = c.stats || { url: '', token: '' };
+    const disc = c.networks.filter(n => n.storeDiscount);
+    const S = window.PodiumStats, cur = S?.storeCtx() || {}, found = S?.storeOf();
+    $('#tabBody').innerHTML = `<div class="card-admin"><h3>Magasins</h3>
+      <p class="sub">Le magasin est reconnu grâce au nom affiché sous le logo MyEasyOptic (colonne « Nom MyEasyOptic ») ou au code client MyEasyOptic.
+        Il fixe la remise appliquée aux grilles ${disc.map(n => esc(n.name)).join(', ') || '—'}. Case vide : pas de remise (tarif brut).
+        Poste actuel : <b>${esc(cur.magasin || 'non identifié')}</b>${cur.codeClient ? ' · code client ' + esc(cur.codeClient) : ''} → ${found ? '<b>' + esc(found.name) + '</b>' : '<span style="color:#b3261e">aucun magasin correspondant</span>'}.</p>
+      <div class="scroll-x"><table class="tbl"><thead><tr><th>Magasin</th><th>Nom MyEasyOptic</th><th>Code Meo</th><th>Code client MyEasyOptic</th>${disc.map(n => `<th>Remise ${esc(n.name)} (%)</th>`).join('')}<th></th></tr></thead>
+      <tbody>${c.stores.map((s, i) => `<tr><td>${inp(`stores.${i}.name`)}</td><td>${inp(`stores.${i}.meo`)}</td><td>${inp(`stores.${i}.code`)}</td><td>${inp(`stores.${i}.codeClient`)}</td>
+        ${disc.map(n => `<td><input type="text" inputmode="numeric" data-disc="${i}|${n.id}" value="${s.discounts?.[n.id] ?? ''}" style="max-width:80px"></td>`).join('')}
+        <td><button class="btn small icon" data-sdel="${i}">✕</button></td></tr>`).join('')}</tbody></table></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="sAdd">＋ Magasin</button></div></div>
+    <div class="card-admin"><h3>Suivi d'utilisation</h3>
+      <p class="sub">À chaque envoi dans MyEasyOptic, Podium ajoute une ligne dans votre tableur Google Sheets :
+        date · magasin · technicien · client · mesures FIT renseignées (oui si au moins 3 champs) · produit choisi · montant total · réseau.
+        Mode d'emploi : fichier « Suivi Podium - mode d'emploi.txt » dans PODIUM › outils.</p>
+      <div class="stack"><label>Adresse de l'application Apps Script (se termine par /exec)${inp('stats.url')}</label>
+        <label>Code de contrôle (identique à celui du script)${inp('stats.token')}</label></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="sTest">Envoyer une ligne de test</button></div></div>`;
+    bindAll($('#tabBody'));
+    $$('[data-disc]').forEach(el => el.onchange = () => {
+      const [i, id] = el.dataset.disc.split('|'), v = num(el.value), s = c.stores[+i];
+      s.discounts = s.discounts || {}; if (v == null) delete s.discounts[id]; else s.discounts[id] = v; save();
+    });
+    $$('[data-sdel]').forEach(b => b.onclick = () => { if (!confirm('Supprimer ce magasin ?')) return; c.stores.splice(+b.dataset.sdel, 1); save(); tabMagasins(); });
+    $('#sAdd').onclick = () => { c.stores.push({ name: '', meo: '', code: '', codeClient: '', discounts: {} }); save(); tabMagasins(); };
+    $('#sTest').onclick = () => {
+      if (!c.stats.url) return toast("Renseignez d'abord l'adresse Apps Script");
+      const d = new Date();
+      fetch(c.stats.url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token: c.stats.token, date: d.toISOString().slice(0, 16).replace('T', ' '), magasin: found?.name || cur.magasin || 'TEST', technicien: 'Test Podium', client: 'Ligne de test', mesuresFit: 'non', produit: 'Test', montant: 0, reseau: '—' }) })
+        .then(() => toast('Ligne de test envoyée : vérifiez le tableur')).catch(e => toast('Envoi impossible : ' + e.message));
+    };
   }
 
   /* ---------- Import / sauvegarde ---------- */
