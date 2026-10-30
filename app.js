@@ -85,7 +85,7 @@ const blankClient = () => ({
   step: 1, rx: { od: {}, og: {} }, mes: defaultMes(), alt: 'dvo', mixed: false,
   frame: { type: cfg.frames[0]?.id, price: null }, mode: 'auto',
   // blueMat coché par défaut : les verres BUC / EPS sont présentés ; décoché : uniquement les verres sans BUC / EPS
-  opts: { precal: false, blue: false, blueMat: true, blueTr: false, ar: false, arSel: [], photo: false, tint: 'trs', color: null, antifatigue: false, boost: null, panierA: false, noFit: false },
+  opts: { precal: false, blue: false, blueMat: true, blueTr: false, ar: false, arSel: [], photo: false, tint: 'trs', color: null, antifatigue: false, boost: null, panierA: false, noFit: false, showFit: false },
   material: 'auto', pos: 0, selected: null, network: null,
 });
 let S;
@@ -412,6 +412,7 @@ function offers() {
     if (S.opts.antifatigue ? !g.antifatigue || (boostOf(g) && boostOf(g) !== curBoost()) : boostOf(g)) continue;
     if (track) { if (!g.track) continue; }              // CVP renseigné : uniquement des verres Track
     else if (g.track) continue;                        // un verre Track n'est proposé qu'avec un CVP
+    else if (verdict == null && !S.opts.showFit && g.fit) continue; // aucune mesure FIT : non FIT par défaut, curseur « Verres FIT »
     else if (curNet()) { /* grille tarifaire : verres FIT et non FIT proposés ensemble, mesures non prises en compte */ }
     else if (verdict === 'fit' && !S.opts.noFit && !g.fit) continue; // FIT recommandé : uniquement des verres FIT
     else if ((verdict === 'useless' || (verdict === 'fit' && S.opts.noFit)) && g.fit) continue; // standard, ou « Non FIT » : pas de FIT
@@ -574,6 +575,7 @@ function renderRecap() {
   };
   const mes = visibleMes().filter(m => num(S.mes[m.id]) != null && !isDefault(m)).map(m => `${esc(m.name)} ${String(S.mes[m.id]).replace('.', ',')}`);
   const v = trackOnly() ? 'Track (CVP)' : fitVerdict() === 'fit' && S.opts.noFit ? 'FIT recommandé · non retenu'
+    : fitVerdict() == null ? 'Valeur FIT manquante'
     : { fit: 'FIT recommandé', useless: 'FIT inutile', err: 'Mesure à vérifier' }[fitVerdict()];
   const frame = num(S.frame.price);
   $('#recap').innerHTML = `
@@ -618,6 +620,7 @@ function renderFilters() {
     // FIT recommandé : l'opticien peut sortir de la préconisation et proposer des verres standard
     (fitVerdict() === 'fit' && !trackOnly() && !curNet() ? tog('noFit', 'Non FIT', 'Ignorer la préconisation FIT') : '') +
     // en réseau, la recommandation FIT est seulement indiquée
+    (fitVerdict() == null && !trackOnly() ? tog('showFit', 'Verres FIT', 'Afficher aussi les verres FIT') + '<span class="pill fit-miss">⚠ Valeur FIT manquante</span>' : '') +
     (fitVerdict() === 'fit' && !trackOnly() && curNet() ? '<span class="pill brand fit-reco">✓ Verres FIT recommandés</span>' : '');
   renderLenses();
 }
@@ -724,7 +727,7 @@ function renderPodium() {
   $('#podiumTitle').textContent = isMixed() ? 'Équipement progressif + unifocal' : isProg() ? 'Verres progressifs' : 'Verres unifocaux';
   $('#podiumCount').textContent = current.length ? `${current.length} proposition${current.length > 1 ? 's' : ''} · du plus abordable au plus premium` : '';
   if (!current.length) {
-    const why = trackOnly() ? (cfg.gammes.some(g => g.enabled && g.track) ? 'Seuls les verres Track sont proposés (CVP renseigné).' : 'CVP renseigné, mais aucune gamme Track n\'est active dans les paramètres.') : fitVerdict() === 'fit' && !S.opts.noFit ? 'Seuls les verres FIT sont proposés (FIT recommandé ; option « Non FIT » pour les verres standard).' : '';
+    const why = trackOnly() ? (cfg.gammes.some(g => g.enabled && g.track) ? 'Seuls les verres Track sont proposés (CVP renseigné).' : 'CVP renseigné, mais aucune gamme Track n\'est active dans les paramètres.') : fitVerdict() === 'fit' && !S.opts.noFit && !curNet() ? 'Seuls les verres FIT sont proposés (FIT recommandé ; option « Non FIT » pour les verres standard).' : fitVerdict() == null && !S.opts.showFit ? 'Valeur FIT manquante : seuls les verres non FIT sont proposés (curseur « Verres FIT » pour les afficher).' : '';
     track.innerHTML = `<div class="empty" style="flex:1"><b>Aucun verre ne correspond</b>${why} Assouplissez les filtres (traitement, matière, lumière bleue, anti-fatigue…) ou activez/tarifez des gammes dans les paramètres.</div>`;
     track.style.transform = ''; $('#dots').innerHTML = ''; $('#prev').disabled = $('#next').disabled = true;
     renderSummary(); return;
@@ -911,6 +914,7 @@ function renderMini() {
     if (o.ar) chips.push(`Anti-reflets : ${o.arSel.length ? o.arSel.map(id => cfg.treatments.find(t => t.id === id)?.name).filter(Boolean).join(', ') : 'tous'}`);
     if (o.photo) chips.push(cfg.tints.find(t => t.id === o.tint)?.name || 'Transitions');
     if (o.noFit && fitVerdict() === 'fit' && !trackOnly() && !curNet()) chips.push('Non FIT');
+    if (fitVerdict() == null && !trackOnly()) chips.push(o.showFit ? 'Valeur FIT manquante · verres FIT affichés' : '⚠ Valeur FIT manquante');
     if (fitVerdict() === 'fit' && !trackOnly() && curNet()) chips.push('Verres FIT recommandés');
     if (mat && matWarnings(mat).length) chips.push('⚠ Amincissement à vérifier');
     if (o.antifatigue) chips.push(`Anti-fatigue · Boost ${String(curBoost() || '').replace('.', ',')}`);
@@ -1232,7 +1236,25 @@ function checkUpdate() {
 
 window.Podium = { get cfg() { return cfg; }, get profile() { return PROFILE; }, logout, setCfg, saveCfg, esc, eur, num, clone, toast, openModal, closeModal, shade, $, $$ };
 // démarrage une fois tous les scripts chargés (admin.js arrive après ce fichier)
+// Le serveur autorise 10 minutes de cache : si une version plus récente est en ligne, on recharge (une seule fois par version).
+// Fait avant de répondre à MyEasyOptic, qui renvoie la correction tant que Podium n'a pas accusé réception.
+async function checkVersion() {
+  const cur = /data\.enc\.js\?v=(\w+)/.exec(document.querySelector('script[src*="data.enc.js"]')?.src || '')?.[1];
+  if (!cur) return;
+  try {
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 2000);
+    const html = await (await fetch(location.pathname, { cache: 'no-store', signal: ctrl.signal })).text();
+    clearTimeout(t);
+    const live = /data\.enc\.js\?v=(\w+)/.exec(html)?.[1];
+    if (live && live !== cur && sessionStorage.getItem('podium-recharge') !== live) {
+      sessionStorage.setItem('podium-recharge', live);
+      location.reload();
+      await new Promise(() => {}); // la page se recharge
+    }
+  } catch (e) {} // hors ligne ou lent : on continue avec la version chargée
+}
 window.addEventListener('DOMContentLoaded', async () => {
+  await checkVersion();
   await ensureAccess();
   cfg = loadCfg(); S = blankClient();
   document.body.dataset.profile = PROFILE;
