@@ -796,7 +796,17 @@ window.addEventListener('message', e => {
   meoLast = e.data.id;
   fromMeo(e.data);
 });
+// Version minimale de l'extension MyEasyOptic : une ancienne version est signalée sur le poste
+const EXT_MIN = '1.12.0';
+const verNum = v => String(v || '0').split('.').reduce((t, x) => t * 1000 + (+x || 0), 0);
+function checkExtension(v) {
+  if (verNum(v) >= verNum(EXT_MIN)) return;
+  const b = $('#updateBanner');
+  b.hidden = false;
+  b.textContent = `⚠ Extension MyEasyOptic à mettre à jour sur ce poste : version ${v || 'ancienne'} installée, ${EXT_MIN} attendue (page d'installation : pont.html).`;
+}
 function fromMeo(d) {
+  checkExtension(d.ctx?.version);
   resetClient();
   S.ctx = d.ctx || null;
   if (d.ctx?.magasin || d.ctx?.codeClient) try { localStorage.setItem('podium-magasin', JSON.stringify({ magasin: d.ctx.magasin, codeClient: d.ctx.codeClient })); } catch (e) {}
