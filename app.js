@@ -44,6 +44,7 @@ function migrate(c) {
     if (!n.corrSupp) n.corrSupp = clone(dn.corrSupp || { prog: [], unif: [] });
     if (!n.treatments && dn.treatments) n.treatments = clone(dn.treatments);
     if (dn.storeDiscount && n.storeDiscount == null) n.storeDiscount = true;
+    if (n.frameDiscount === undefined && dn.frameDiscount) n.frameDiscount = clone(dn.frameDiscount);
     if (dn.exclude) { n.exclude = clone(dn.exclude); n.excludeNote = dn.excludeNote; }
     if (!n.defaults && dn.defaults) n.defaults = clone(dn.defaults);
     if (dn.rulesVersion && dn.rulesVersion !== n.rulesVersion) Object.assign(n, { rules: clone(dn.rules), supp: clone(dn.supp || null), rulesVersion: dn.rulesVersion });
@@ -496,6 +497,16 @@ function buildNetSeg() {
   $('#netSeg').innerHTML = (cfg.networks || []).map(n => `<button type="button" data-net="${esc(n.id)}" aria-pressed="false">${esc(n.name)}</button>`).join('');
   if (S.network && !curNet()) S.network = null;
 }
+// Réseau coché alors que le dossier MyEasyOptic n'a pas de mutuelle (« Rbt RC » affiché)
+const noMutuelle = () => !!(curNet() && S.ctx?.sansMutuelle);
+// Remise imposée par le réseau sur la monture (Panier A : aucune)
+function frameNet() {
+  const gross = num(S.frame.price), net = curNet();
+  if (gross == null || !net || S.opts.panierA) return { gross, price: gross, rate: 0, remise: 0 };
+  const r = (net.frameDiscount || []).find(x => gross >= (+x.min || 0) && (x.max == null || x.max === '' || gross <= +x.max));
+  const rate = +r?.rate || 0, remise = Math.round(gross * rate) / 100;
+  return { gross, rate, remise, price: Math.round((gross - remise) * 100) / 100 };
+}
 function renderNet() {
   $$('#netSeg button').forEach(b => { const on = b.dataset.net === S.network; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
   const net = curNet(), n = net ? cfg.gammes.filter(g => inNet(g, net)).length : 0;
@@ -503,6 +514,7 @@ function renderNet() {
   const remTxt = rem == null ? '' : st ? ` · remise ${st.name} : ${rem} %` : ' · magasin non identifié : tarif sans remise';
   $('#netNote').textContent = (!net ? 'Aucun réseau : tarifs catalogue' : n ? `Grille ${net.name} : ${n} gamme${n > 1 ? 's' : ''} au tarif réseau${net.withCatalogue ? ', complétée par le catalogue' : ''}`
     : `Aucun verre configuré pour ${net.name} (Paramètres › Réseaux)${net.withCatalogue ? ' : tarifs catalogue' : ''}`) + remTxt;
+  $('#netWarn').hidden = !noMutuelle();
 }
 function buildFrameSeg() {
   $('#frameSeg').innerHTML = cfg.frames.map(f => `<button data-frame="${f.id}">${esc(f.name)}</button>`).join('');
@@ -545,7 +557,8 @@ function renderEntry() {
   $$('#frameSeg button').forEach(b => b.classList.toggle('on', b.dataset.frame === S.frame.type));
   renderNet();
   const minMat = matsSorted().find(m => m.index >= (f?.minIndex || 0));
-  $('#frameNote').innerHTML = (isClassAFrame() ? '<b class="classA">Classe A</b> ' : '') + (f && f.minIndex > 1.5 && minMat ? `Monture ${esc(f.name.toLowerCase())} : <b>${esc(minMat.name)}</b> minimum.` : '');
+  const fnet = frameNet();
+  $('#frameNote').innerHTML = (fnet.rate ? `Remise ${esc(curNet().name)} imposée : <b>−${fnet.rate} %</b>, soit ${eur(fnet.price)} €. ` : '') + (isClassAFrame() ? '<b class="classA">Classe A</b> ' : '') + (f && f.minIndex > 1.5 && minMat ? `Monture ${esc(f.name.toLowerCase())} : <b>${esc(minMat.name)}</b> minimum.` : '');
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
 }
 
@@ -566,10 +579,11 @@ function renderRecap() {
   $('#recap').innerHTML = `
     <div class="blk"><small>Correction</small>${eye('od')}${eye('og')}</div>
     <div class="blk"><small>Mesures${v ? ' · ' + v : ''}</small><span>${mes.join(' · ') || '—'}</span></div>
-    <div class="blk"><small>Monture</small><span>${esc(frameDef()?.name || '')}${frame != null ? ' · ' + eur(frame) + ' €' : ''}${isClassAFrame() ? ' <b class="classA">Classe A</b>' : ''}</span></div>
+    <div class="blk"><small>Monture</small><span>${esc(frameDef()?.name || '')}${frame != null ? ' · ' + eur(frame) + ' €' : ''}${frameNet().rate ? ` (−${frameNet().rate} % : ${eur(frameNet().price)} €)` : ''}${isClassAFrame() ? ' <b class="classA">Classe A</b>' : ''}</span></div>
     ${curNet() ? `<div class="blk"><small>Réseau</small><span>${esc(curNet().name)}${curNet().storeDiscount && storeOf() ? ` · −${+storeOf().discounts?.[curNet().id] || 0} %` : ''}</span></div>` : ''}
     ${storeOf() || S.ctx?.client ? `<div class="blk"><small>Magasin${S.ctx?.client ? ' · client' : ''}</small><span>${esc(storeOf()?.name || storeCtx().magasin || '—')}${S.ctx?.client ? ' · ' + esc(S.ctx.client) : ''}</span></div>` : ''}
     ${isMixed() ? `<div class="blk"><small>Équipement</small><span>Progressif ${eyeName(progEye())} + unifocal</span></div>` : ''}
+    ${noMutuelle() ? '<div class="blk warn">⚠ Sélectionnez la mutuelle dans MyEasyOptic : tarif réseau non garanti</div>' : ''}
     <div class="blk edit">✎ Modifier</div>`;
 }
 
@@ -740,7 +754,7 @@ function move(d) { S.pos += d; layoutCarousel(); }
 
 function renderSummary() {
   const o = current.find(x => x.key === S.selected);
-  const frame = num(S.frame.price);
+  const fn = frameNet(), frame = fn.price;
   const prisms = o && !o.classA ? prismEyes() : [];
   const prismCost = prisms.length * (o?.net && curNet()?.supp?.prism != null ? Math.round(+curNet().supp.prism * storeFactor(curNet()) * 100) / 100 : (+cfg.supplements.prism || 0));
   const lenses = o ? o.pair + prismCost : null;
@@ -755,7 +769,7 @@ function renderSummary() {
     <div class="sel-name"><small>Équipement</small>${o
       ? `<b>${esc(o.g.name)}${o.unif ? ' + ' + esc(o.unif.g.name) : ''}</b><em>${esc(o.mat.name)} ${o.mat.index}${o.filt ? ' ' + esc(filtName(o.filt)) : ''} · ${esc(o.tr.name)}${tint?.photo ? ' · ' + esc(tint.name) + (curColor() ? ' ' + esc(curColor().name) : '') : ''}${o.precal ? ' · Précal' : ''}</em>`
       : '<b>Sélectionnez un verre</b><em>Cliquez sur une vignette du podium</em>'}</div>
-    <div class="amt"><small>Monture ${esc(frameDef()?.name || '')}${isClassAFrame() ? ' · Classe A' : ''}</small><b>${frame != null ? eur(frame) + ' €' : '—'}</b></div>
+    <div class="amt"><small>Monture ${esc(frameDef()?.name || '')}${isClassAFrame() ? ' · Classe A' : ''}${fn.rate ? ` · ${eur(fn.gross)} € − ${fn.rate} % ${esc(curNet().name)}` : ''}</small><b>${frame != null ? eur(frame) + ' €' : '—'}</b></div>
     <span class="op">+</span>
     <div class="amt"><small>${lensLabelFull}</small><b>${lenses != null ? eur(lenses) + ' €' : '—'}</b></div>
     <span class="op">=</span>
@@ -769,6 +783,12 @@ function renderSummary() {
 const MEO_ORIGIN = 'https://hds.myeasyoptic.com';
 let meo = null, meoLast = null;
 window.addEventListener('message', e => {
+  if (e.origin === MEO_ORIGIN && e.data?.type === 'podium-mutuelle' && S?.ctx) {
+    if (S.ctx.sansMutuelle === e.data.sansMutuelle && S.ctx.mutuelle === e.data.mutuelle) return;
+    Object.assign(S.ctx, { sansMutuelle: e.data.sansMutuelle, mutuelle: e.data.mutuelle });
+    if (S.step === 1) renderNet(); else renderRecap();
+    return;
+  }
   if (e.origin !== MEO_ORIGIN || e.data?.type !== 'podium-client' || !cfg) return; // pas encore connecté : le pont réessaie
   meo = e.source;
   meo.postMessage({ type: 'podium-ack', id: e.data.id }, MEO_ORIGIN);
@@ -834,7 +854,7 @@ function sendToMeo() {
 
 // Suivi d'utilisation (Google Sheets via Apps Script, adresse dans Paramètres › Magasins & suivi)
 function statRow(o, l) {
-  const c = storeCtx(), st = storeOf(), frame = num(S.frame.price) || 0;
+  const c = storeCtx(), st = storeOf(), frame = frameNet().price || 0;
   const prisms = o.classA ? [] : prismEyes();
   const prism = prisms.length * (o.net && curNet()?.supp?.prism != null ? +curNet().supp.prism * storeFactor(curNet()) : (+cfg.supplements.prism || 0));
   // mesures FIT renseignées : au moins 3 champs (le cap de tête à sa valeur par défaut ne compte pas)
@@ -1109,7 +1129,7 @@ function bindMain() {
     const t = e.target.closest('[data-opt]'); if (!t || t.classList.contains('locked')) return;
     S.opts[t.dataset.opt] = !S.opts[t.dataset.opt];
     if (t.dataset.opt === 'ar') arOpen = S.opts.ar;
-    if (t.dataset.opt === 'noFit') renderRecap();
+    if (t.dataset.opt === 'noFit' || t.dataset.opt === 'panierA') renderRecap();
     S.pos = 0; renderFilters(); renderPodium();
   });
   document.addEventListener('click', e => {

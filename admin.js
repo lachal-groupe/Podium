@@ -323,7 +323,7 @@
       bindNav(); bindOptions(c.noNetwork); return;
     }
     if (!net) { $('#tabBody').innerHTML = `<div class="card-admin">${nav}<p class="sub">Aucun réseau. Ajoutez-en un.</p></div>`; return bindNav(); }
-    net.gammes = net.gammes || []; net.prices = net.prices || {};
+    net.gammes = net.gammes || []; net.prices = net.prices || {}; net.frameDiscount = net.frameDiscount || [];
     net.corrSupp = net.corrSupp || { prog: [], unif: [] }; net.corrSupp.prog = net.corrSupp.prog || []; net.corrSupp.unif = net.corrSupp.unif || [];
     const key = (g, k) => g.prices[k]?.code || `${g.id}|${k}`;
     const nPrices = g => Object.keys(g.prices).filter(k => typeof net.prices[key(g, k)] === 'number').length;
@@ -351,7 +351,11 @@
       </div>
       <div class="scroll-x" id="ntable"></div></div>
     <div class="card-admin" id="nprices"></div>
-    ${optionsCard(net, net.name)}`;
+    ${optionsCard(net, net.name)}
+    <div class="card-admin" id="frameDiscCard"><h3>Remise imposée sur la monture — ${esc(net.name)}</h3>
+      <p class="sub">Selon le prix de la monture ; première ligne qui correspond. Sans ligne : pas de remise. « Jusqu'à » vide : sans limite.</p>
+      ${net.frameDiscount.length ? `<table class="tbl"><thead><tr><th>À partir de (€)</th><th>Jusqu'à (€)</th><th>Remise (%)</th><th></th></tr></thead><tbody>${net.frameDiscount.map((_, i) => `<tr><td>${inp(`networks.${ni}.frameDiscount.${i}.min`, 'num')}</td><td>${inp(`networks.${ni}.frameDiscount.${i}.max`, 'num')}</td><td>${inp(`networks.${ni}.frameDiscount.${i}.rate`, 'num')}</td><td><button class="btn small icon" data-fddel="${i}">✕</button></td></tr>`).join('')}</tbody></table>` : ''}
+      <div class="row" style="margin-top:10px"><button class="btn" id="fdAdd">＋ Tranche</button></div></div>`;
     const draw = () => {
       const q = nf.q.trim().toLowerCase();
       const list = c.gammes.filter(g => (nf.show === 'all' || net.gammes.includes(g.id)) && (nf.type === 'all' || g.type === nf.type) && (!q || (g.name + ' ' + (g.source || '')).toLowerCase().includes(q)))
@@ -423,6 +427,9 @@
     $$('#nshow button').forEach(b => b.onclick = () => { nf.show = b.dataset.v; tabReseaux(); });
     $$('#ntype button').forEach(b => b.onclick = () => { nf.type = b.dataset.v; tabReseaux(); });
     bindOptions(net);
+    bindAll($('#frameDiscCard'));
+    $$('[data-fddel]').forEach(b => b.onclick = () => { net.frameDiscount.splice(+b.dataset.fddel, 1); save(); tabReseaux(); });
+    $('#fdAdd').onclick = () => { net.frameDiscount.push({ min: 0, max: null, rate: 0 }); save(); tabReseaux(); };
     $('#nAllShown').onclick = () => { net.gammes = [...new Set([...net.gammes, ...c.gammes.filter(g => g.enabled).map(g => g.id)])]; save('Gammes affichées ajoutées'); tabReseaux(); };
     draw(); prices();
   }

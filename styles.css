@@ -429,3 +429,8 @@ body[data-profile="user"] #btnAdmin{opacity:.5}
 .lens .warn-i{position:absolute;top:4px;right:6px;font-style:normal;font-size:13px;color:#c77700}
 .mat-warn{margin:8px 0 2px;padding:8px 12px;border-radius:10px;background:#fff4e0;border:1px solid #f3c77a;color:#7a4a00;font-size:12.5px;line-height:1.4}
 .fit-reco{align-self:center}
+
+/* Réseau coché mais aucune mutuelle dans le dossier MyEasyOptic */
+.net-warn{flex:1 0 100%;padding:10px 14px;border-radius:12px;background:#fff4e0;border:1px solid #f3c77a;color:#7a4a00;font-size:13.5px;font-weight:600;line-height:1.4}
+.net-warn[hidden]{display:none}
+.blk.warn{background:#fff4e0;border-color:#f3c77a;color:#7a4a00;font-weight:600}
