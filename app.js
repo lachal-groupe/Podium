@@ -797,7 +797,7 @@ window.addEventListener('message', e => {
   fromMeo(e.data);
 });
 // Version minimale de l'extension MyEasyOptic : une ancienne version est signalée sur le poste
-const EXT_MIN = '1.12.0';
+const EXT_MIN = '1.13.0';
 const verNum = v => String(v || '0').split('.').reduce((t, x) => t * 1000 + (+x || 0), 0);
 function checkExtension(v) {
   if (verNum(v) >= verNum(EXT_MIN)) return;
@@ -1107,6 +1107,7 @@ function bindMain() {
     const b = e.target.closest('[data-net]'); if (!b) return;
     S.network = S.network === b.dataset.net ? null : b.dataset.net;
     S.pos = 0; renderEntry();
+    if (noMutuelle()) toast('Veillez à bien sélectionner la mutuelle dans MyEasyOptic avant de sélectionner les verres');
   });
   // Monture
   $('#frameSeg').addEventListener('click', e => {
