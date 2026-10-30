@@ -502,7 +502,7 @@ const noMutuelle = () => !!(curNet() && S.ctx?.sansMutuelle);
 // Remise imposée par le réseau sur la monture (Panier A : aucune)
 function frameNet() {
   const gross = num(S.frame.price), net = curNet();
-  if (gross == null || !net || S.opts.panierA) return { gross, price: gross, rate: 0, remise: 0 };
+  if (gross == null || !net || S.opts.panierA || isClassAFrame()) return { gross, price: gross, rate: 0, remise: 0 }; // Panier A, monture Classe A : pas de remise
   const r = (net.frameDiscount || []).find(x => gross >= (+x.min || 0) && (x.max == null || x.max === '' || gross <= +x.max));
   const rate = +r?.rate || 0, remise = Math.round(gross * rate) / 100;
   return { gross, rate, remise, price: Math.round((gross - remise) * 100) / 100 };
