@@ -412,8 +412,8 @@ function offers() {
     if (S.opts.antifatigue ? !g.antifatigue || (boostOf(g) && boostOf(g) !== curBoost()) : boostOf(g)) continue;
     if (track) { if (!g.track) continue; }              // CVP renseigné : uniquement des verres Track
     else if (g.track) continue;                        // un verre Track n'est proposé qu'avec un CVP
-    else if (verdict == null && !S.opts.showFit && g.fit) continue; // aucune mesure FIT : non FIT par défaut, curseur « Verres FIT »
     else if (curNet()) { /* grille tarifaire : verres FIT et non FIT proposés ensemble, mesures non prises en compte */ }
+    else if (verdict == null && !S.opts.showFit && g.fit) continue; // hors réseau, aucune mesure FIT : non FIT par défaut, curseur « Verres FIT »
     else if (verdict === 'fit' && !S.opts.noFit && !g.fit) continue; // FIT recommandé : uniquement des verres FIT
     else if ((verdict === 'useless' || (verdict === 'fit' && S.opts.noFit)) && g.fit) continue; // standard, ou « Non FIT » : pas de FIT
     for (const tr of cfg.treatments) {
@@ -620,7 +620,7 @@ function renderFilters() {
     // FIT recommandé : l'opticien peut sortir de la préconisation et proposer des verres standard
     (fitVerdict() === 'fit' && !trackOnly() && !curNet() ? tog('noFit', 'Non FIT', 'Ignorer la préconisation FIT') : '') +
     // en réseau, la recommandation FIT est seulement indiquée
-    (fitVerdict() == null && !trackOnly() ? tog('showFit', 'Verres FIT', 'Afficher aussi les verres FIT') + '<span class="pill fit-miss">⚠ Valeur FIT manquante</span>' : '') +
+    (fitVerdict() == null && !trackOnly() ? (curNet() ? '' : tog('showFit', 'Verres FIT', 'Afficher aussi les verres FIT')) + '<span class="pill fit-miss">⚠ Valeur FIT manquante</span>' : '') +
     (fitVerdict() === 'fit' && !trackOnly() && curNet() ? '<span class="pill brand fit-reco">✓ Verres FIT recommandés</span>' : '');
   renderLenses();
 }
@@ -727,7 +727,7 @@ function renderPodium() {
   $('#podiumTitle').textContent = isMixed() ? 'Équipement progressif + unifocal' : isProg() ? 'Verres progressifs' : 'Verres unifocaux';
   $('#podiumCount').textContent = current.length ? `${current.length} proposition${current.length > 1 ? 's' : ''} · du plus abordable au plus premium` : '';
   if (!current.length) {
-    const why = trackOnly() ? (cfg.gammes.some(g => g.enabled && g.track) ? 'Seuls les verres Track sont proposés (CVP renseigné).' : 'CVP renseigné, mais aucune gamme Track n\'est active dans les paramètres.') : fitVerdict() === 'fit' && !S.opts.noFit && !curNet() ? 'Seuls les verres FIT sont proposés (FIT recommandé ; option « Non FIT » pour les verres standard).' : fitVerdict() == null && !S.opts.showFit ? 'Valeur FIT manquante : seuls les verres non FIT sont proposés (curseur « Verres FIT » pour les afficher).' : '';
+    const why = trackOnly() ? (cfg.gammes.some(g => g.enabled && g.track) ? 'Seuls les verres Track sont proposés (CVP renseigné).' : 'CVP renseigné, mais aucune gamme Track n\'est active dans les paramètres.') : fitVerdict() === 'fit' && !S.opts.noFit && !curNet() ? 'Seuls les verres FIT sont proposés (FIT recommandé ; option « Non FIT » pour les verres standard).' : fitVerdict() == null && !S.opts.showFit && !curNet() ? 'Valeur FIT manquante : seuls les verres non FIT sont proposés (curseur « Verres FIT » pour les afficher).' : '';
     track.innerHTML = `<div class="empty" style="flex:1"><b>Aucun verre ne correspond</b>${why} Assouplissez les filtres (traitement, matière, lumière bleue, anti-fatigue…) ou activez/tarifez des gammes dans les paramètres.</div>`;
     track.style.transform = ''; $('#dots').innerHTML = ''; $('#prev').disabled = $('#next').disabled = true;
     renderSummary(); return;
@@ -914,7 +914,7 @@ function renderMini() {
     if (o.ar) chips.push(`Anti-reflets : ${o.arSel.length ? o.arSel.map(id => cfg.treatments.find(t => t.id === id)?.name).filter(Boolean).join(', ') : 'tous'}`);
     if (o.photo) chips.push(cfg.tints.find(t => t.id === o.tint)?.name || 'Transitions');
     if (o.noFit && fitVerdict() === 'fit' && !trackOnly() && !curNet()) chips.push('Non FIT');
-    if (fitVerdict() == null && !trackOnly()) chips.push(o.showFit ? 'Valeur FIT manquante · verres FIT affichés' : '⚠ Valeur FIT manquante');
+    if (fitVerdict() == null && !trackOnly()) chips.push(o.showFit && !curNet() ? 'Valeur FIT manquante · verres FIT affichés' : '⚠ Valeur FIT manquante');
     if (fitVerdict() === 'fit' && !trackOnly() && curNet()) chips.push('Verres FIT recommandés');
     if (mat && matWarnings(mat).length) chips.push('⚠ Amincissement à vérifier');
     if (o.antifatigue) chips.push(`Anti-fatigue · Boost ${String(curBoost() || '').replace('.', ',')}`);
