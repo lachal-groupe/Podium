@@ -806,7 +806,7 @@ function checkExtension(v) {
   if (verNum(v) >= verNum(EXT_MIN)) return;
   const b = $('#updateBanner');
   b.hidden = false;
-  b.textContent = `⚠ Extension MyEasyOptic à mettre à jour sur ce poste : version ${v || 'ancienne'} installée, ${EXT_MIN} attendue (page d'installation : pont.html).`;
+  b.innerHTML = `⚠ Extension MyEasyOptic à mettre à jour sur ce poste : version ${esc(v || 'ancienne')} installée, ${EXT_MIN} attendue. <a href="pont.html" target="_blank" rel="noopener">Installer la version du Chrome Web Store</a>`;
 }
 function fromMeo(d) {
   checkExtension(d.ctx?.version);
