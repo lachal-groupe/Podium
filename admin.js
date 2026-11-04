@@ -300,9 +300,10 @@
       <div class="scroll-x"><table class="tbl"><thead><tr><th>Niveau</th><th>Sphère jusqu'à (D)</th><th>Indice</th><th colspan="3">Unifocaux : sphérique / cyl. 0 à 4 / cyl. &gt; 4</th><th colspan="3">Progressifs : sphérique / cyl. 0 à 4 / cyl. &gt; 4</th></tr></thead>
       <tbody>${c.classA.levels.map((l, i) => `<tr><td>${inp(`classA.levels.${i}.label`)}</td><td>${inp(`classA.levels.${i}.max`, 'num', 'mini')}</td><td>${inp(`classA.levels.${i}.index`, 'num', 'mini')}</td>
         ${[0, 1, 2].map(j => `<td>${inp(`classA.unif.${i}.${j}`, 'num', 'mini')}</td>`).join('')}${[0, 1, 2].map(j => `<td>${inp(`classA.prog.${i}.${j}`, 'num', 'mini')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>` : ''}
-    <div class="card-admin"><h3>Types de monture</h3><p class="sub">Indice minimum imposé par la monture (nylor et percée : Ormix minimum).</p>
-      <table class="tbl"><thead><tr><th>Nom</th><th>Matière minimum</th></tr></thead>
-      <tbody>${c.frames.map((f, i) => `<tr><td>${inp(`frames.${i}.name`)}</td><td><select data-bind="frames.${i}.minIndex" data-type="num">${idxOpts(f.minIndex)}</select></td></tr>`).join('')}</tbody></table></div>
+    <div class="card-admin"><h3>Types de monture</h3><p class="sub">Matière conseillée pour la monture (proposée d'office). Les matières plus fines restent sélectionnables : celles cochées sans réserve, les autres avec le message « non recommandé pour ce type de montage ».</p>
+      <table class="tbl"><thead><tr><th>Nom</th><th>Matière conseillée (minimum)</th><th>Aussi possibles sans réserve</th></tr></thead>
+      <tbody>${c.frames.map((f, i) => `<tr><td>${inp(`frames.${i}.name`)}</td><td><select data-bind="frames.${i}.minIndex" data-type="num">${idxOpts(f.minIndex)}</select></td>
+        <td>${c.materials.filter(m => m.index < (f.minIndex || 0)).map(m => `<label style="margin-right:12px;white-space:nowrap"><input type="checkbox" data-fok="${i}|${m.id}" ${(f.ok || []).includes(m.id) ? 'checked' : ''}> ${esc(m.name)}</label>`).join('') || '—'}</td></tr>`).join('')}</tbody></table></div>
     <div class="card-admin"><div class="row" style="justify-content:space-between"><div><h3>Table d'amincissement</h3><p class="sub">Puissance du méridien le plus fort (valeur absolue, sphère ou sphère + cylindre) → indice conseillé.</p></div><button class="btn" id="addTh">+ Palier</button></div>
       <table class="tbl"><thead><tr><th>Jusqu'à (dioptries)</th><th>Indice conseillé</th><th></th></tr></thead>
       <tbody>${c.thinning.map((r, i) => `<tr><td>${inp(`thinning.${i}.max`, 'num', 'num')}</td><td><select data-bind="thinning.${i}.index" data-type="num">${idxOpts(r.index)}</select></td><td><button class="btn small danger" data-delth="${i}">✕</button></td></tr>`).join('')}</tbody></table></div>
@@ -310,6 +311,7 @@
       <table class="tbl"><thead><tr><th>Mesure</th><th>Unité</th><th>Erreur basse ≤</th><th>Standard min</th><th>Standard max</th><th>Erreur haute ≥</th><th>Valeur par défaut</th></tr></thead>
       <tbody>${c.fit.map((m, i) => m.track ? '' : `<tr><td>${inp(`fit.${i}.name`)}</td><td>${inp(`fit.${i}.unit`, 'text', 'mini')}</td>${['errLow', 'uMin', 'uMax', 'errHigh'].map(k => `<td>${inp(`fit.${i}.${k}`, 'num', 'num')}</td>`).join('')}<td>${m.default != null ? inp(`fit.${i}.default`, 'num', 'num') : ''}</td></tr>`).join('')}</tbody></table></div>`;
     bindAll($('#tabBody'));
+    $$('[data-fok]').forEach(el => el.onchange = () => { const [i, id] = el.dataset.fok.split('|'), f = cfg().frames[+i]; f.ok = (f.ok || []).filter(x => x !== id).concat(el.checked ? [id] : []); save(); });
     $('#addTh').onclick = () => { c.thinning.push({ max: 99, index: 1.74 }); save(); tabOptions(); };
     $$('[data-delth]').forEach(b => b.onclick = () => { c.thinning.splice(+b.dataset.delth, 1); save(); tabOptions(); });
   }

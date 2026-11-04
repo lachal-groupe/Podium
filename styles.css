@@ -437,3 +437,7 @@ body[data-profile="user"] #btnAdmin{opacity:.5}
 
 /* Aucune mesure FIT renseignée */
 .fit-miss{align-self:center;background:#fff4e0;border:1px solid #f3c77a;color:#7a4a00;font-weight:600}
+
+/* Matière déconseillée pour le montage (nylor, percée) */
+.mat-warn.red{background:#fdecee;border-color:#f2a7b0;color:#b3261e;font-weight:700}
+.lens .warn-i.red{color:#c62828}

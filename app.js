@@ -32,6 +32,7 @@ const newNetwork = name => ({ id: name.toLowerCase().normalize('NFD').replace(/[
 // Complète une config enregistrée avec les champs apparus depuis (mots-clés, gamme de base des versions Fit/Short)
 function migrate(c) {
   if (!c.networks) c.networks = clone(window.PODIUM_DEFAULT.networks || NETWORKS.map(newNetwork));
+  for (const f of c.frames || []) { const df = window.PODIUM_DEFAULT.frames?.find(x => x.id === f.id); if (f.ok === undefined && df?.ok) f.ok = clone(df.ok); }
   if (!c.netClasses) c.netClasses = clone(window.PODIUM_DEFAULT.netClasses || []);
   if (!c.stores) c.stores = clone(window.PODIUM_DEFAULT.stores || []);
   if (!c.stats) c.stats = clone(window.PODIUM_DEFAULT.stats || { url: '', token: '' });
@@ -173,6 +174,12 @@ function thinningIndex(p) {
   if (p == null) return null;
   const rows = [...cfg.thinning].sort((a, b) => a.max - b.max);
   return (rows.find(r => Math.abs(p) <= r.max) || rows[rows.length - 1]).index;
+}
+// Monture nylor / percée : Ormix conseillé ; matières permises sans réserve (Airwear) ; les autres restent possibles avec un avertissement
+function frameMatWarn(m) {
+  const f = frameDef();
+  if (!f || !m || m.index >= (f.minIndex || 0) - 1e-9 || (f.ok || []).includes(m.id)) return '';
+  return `Attention ${m.name} non recommandé pour ce type de montage`;
 }
 const recommendedIndex = () => Math.max(thinningIndex(strongest()) || 0, frameDef()?.minIndex || 0);
 const matsSorted = () => cfg.materials.filter(m => m.shown !== false).sort((a, b) => a.index - b.index);
@@ -423,7 +430,7 @@ function offers() {
       if (blueTr && !tr.blue) continue;
       let mat = null, v = null;
       for (const m of mats) {
-        if (m.index < minFrame || (S.material === 'auto' ? m.index < rec : m.id !== S.material)) continue;
+        if (S.material === 'auto' ? m.index < rec : m.id !== S.material) continue; // matière choisie : toujours proposée
         v = bestFilt(g, m.id, tr.id, tint, allowed); // à prix égal, la version BUC/EPS est présentée
         if (v) { mat = m; break; }
       }
@@ -559,7 +566,7 @@ function renderEntry() {
   renderNet();
   const minMat = matsSorted().find(m => m.index >= (f?.minIndex || 0));
   const fnet = frameNet();
-  $('#frameNote').innerHTML = (fnet.rate ? `Remise ${esc(curNet().name)} imposée : <b>−${fnet.rate} %</b>, soit ${eur(fnet.price)} €. ` : '') + (isClassAFrame() ? '<b class="classA">Classe A</b> ' : '') + (f && f.minIndex > 1.5 && minMat ? `Monture ${esc(f.name.toLowerCase())} : <b>${esc(minMat.name)}</b> minimum.` : '');
+  $('#frameNote').innerHTML = (fnet.rate ? `Remise ${esc(curNet().name)} imposée : <b>−${fnet.rate} %</b>, soit ${eur(fnet.price)} €. ` : '') + (isClassAFrame() ? '<b class="classA">Classe A</b> ' : '') + (f && f.minIndex > 1.5 && minMat ? `Monture ${esc(f.name.toLowerCase())} : <b>${esc(minMat.name)}</b> conseillé${(f.ok || []).length ? ` (${(f.ok || []).map(id => cfg.materials.find(m => m.id === id)?.name).filter(Boolean).join(', ')} possible)` : ''}.` : '');
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
 }
 
@@ -647,12 +654,12 @@ function renderLenses() {
     <div class="lens-h"><b>Matière</b><small>${p == null ? 'Saisissez la correction' : plus ? 'Correction positive · épaisseur au centre' : 'Correction négative · épaisseur au bord'}</small>
       <button class="link" id="matInfo">Amincissement ?</button></div>
     <div class="lens-row">${rows.map(({ m, t }) => {
-      const dis = m.index < minFrame;
-      const w = dis ? [] : matWarnings(m);
-      return `<button class="lens ${sel === m.id ? 'on' : ''} ${dis ? 'dis' : ''}" data-mat="${m.id}" ${dis ? 'disabled title="Non compatible avec ce type de monture"' : w.length ? `title="${esc('Attention : ' + w.join(' · '))}"` : ''}>
-        ${w.length ? '<i class="warn-i" aria-hidden="true">⚠</i>' : ''}${lens(t)}<span class="ln">${esc(m.name)}${recMat?.id === m.id ? ' <i class="star">★</i>' : ''}</span>
+      const fw = frameMatWarn(m), w = matWarnings(m), tip = [fw, ...w].filter(Boolean);
+      return `<button class="lens ${sel === m.id ? 'on' : ''} ${fw ? 'frame-warn' : ''}" data-mat="${m.id}" ${tip.length ? `title="${esc(tip.join(' · '))}"` : ''}>
+        ${tip.length ? `<i class="warn-i ${fw ? 'red' : ''}" aria-hidden="true">⚠</i>` : ''}${lens(t)}<span class="ln">${esc(m.name)}${recMat?.id === m.id ? ' <i class="star">★</i>' : ''}</span>
 </button>`;
     }).join('')}</div>
+    ${(() => { const m = cfg.materials.find(x => x.id === sel), fw = frameMatWarn(m); return fw ? `<div class="mat-warn red">⚠ ${esc(fw)}</div>` : ''; })()}
     ${(() => { const m = cfg.materials.find(x => x.id === sel), w = m ? matWarnings(m) : []; return w.length ? `<div class="mat-warn">⚠ <b>${esc(m.name)}</b> : ${w.map(esc).join(' · ')}</div>` : ''; })()}
     <div class="lens-f">${S.material === 'auto' ? '<span class="pill brand">★ Conseillée automatiquement</span>' : '<button class="link" id="matAuto">↺ Revenir à la matière conseillée</button>'}</div>`;
 }
@@ -919,6 +926,7 @@ function renderMini() {
     if (fitVerdict() == null && !trackOnly()) chips.push(o.showFit && !curNet() ? 'Valeur FIT manquante · verres FIT seulement' : '⚠ Valeur FIT manquante');
     if (fitVerdict() === 'fit' && !trackOnly() && curNet()) chips.push('Verres FIT recommandés');
     if (mat && matWarnings(mat).length) chips.push('⚠ Amincissement à vérifier');
+    if (frameMatWarn(mat)) chips.push(`⚠ ${mat.name} non recommandé pour ce montage`);
     if (o.antifatigue) chips.push(`Anti-fatigue · Boost ${String(curBoost() || '').replace('.', ',')}`);
   }
   $('#ctrlMini').innerHTML = `<span class="mini-l">Options</span>${chips.map(c => `<span class="pill">${esc(c)}</span>`).join('') || '<span class="pill">Aucune option</span>'}<span class="mini-e">⚙ Modifier les options</span>`;
@@ -1120,7 +1128,6 @@ function bindMain() {
     const b = e.target.closest('[data-frame]'); if (!b) return;
     S.frame.type = b.dataset.frame;
     const m = cfg.materials.find(x => x.id === S.material);
-    if (m && m.index < (frameDef()?.minIndex || 0)) S.material = 'auto';
     renderEntry();
   });
   $('#framePrice').addEventListener('input', e => { S.frame.price = e.target.value; renderEntry(); });
