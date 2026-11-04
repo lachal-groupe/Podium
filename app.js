@@ -566,7 +566,7 @@ function renderEntry() {
   renderNet();
   const minMat = matsSorted().find(m => m.index >= (f?.minIndex || 0));
   const fnet = frameNet();
-  $('#frameNote').innerHTML = (fnet.rate ? `Remise ${esc(curNet().name)} imposée : <b>−${fnet.rate} %</b>, soit ${eur(fnet.price)} €. ` : '') + (isClassAFrame() ? '<b class="classA">Classe A</b> ' : '') + (f && f.minIndex > 1.5 && minMat ? `Monture ${esc(f.name.toLowerCase())} : <b>${esc(minMat.name)}</b> conseillé${(f.ok || []).length ? ` (${(f.ok || []).map(id => cfg.materials.find(m => m.id === id)?.name).filter(Boolean).join(', ')} possible)` : ''}.` : '');
+  $('#frameNote').innerHTML = (fnet.rate ? `Remise ${esc(curNet().name)} imposée : <b>−${fnet.rate} %</b>, soit ${eur(fnet.price)} €. ` : '') + (isClassAFrame() ? '<b class="classA">Classe A</b> ' : '') + (f && f.minIndex > 1.5 && minMat ? `Monture ${esc(f.name.toLowerCase())} : <b>${esc(minMat.name)}</b> minimum.` : '');
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
 }
 
