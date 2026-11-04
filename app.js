@@ -67,7 +67,7 @@ function migrate(c) {
   for (const k of ['precalCode', 'prism', 'prismCode']) if (c.supplements[k] == null) c.supplements[k] = window.PODIUM_DEFAULT.supplements[k];
   for (const t of c.tints) {
     const dt = window.PODIUM_DEFAULT.tints.find(x => x.id === t.id);
-    if (dt?.colors && (!t.colors || t.colors.some(c => !c.lib))) t.colors = clone(dt.colors);
+    if (dt?.colors && (!t.colors || t.colors.some(c => !c.lib) || (dt.colorsVersion || 0) > (t.colorsVersion || 0))) { t.colors = clone(dt.colors); t.colorsVersion = dt.colorsVersion; }
     if (t.photo && (t.supp === undefined || t.supp === 59)) t.supp = dt?.supp ?? 0;
   }
   return c;
@@ -289,7 +289,6 @@ function rulePrice(net, g, k) {
   v += netExtra(R, eyes);
   // individualisation (Santéclair) : décote si aucun œil n'atteint la condition
   if (R.fitRule && (R.fitRule.gammes ? R.fitRule.gammes.includes(g.id) : g.fit) && !eyes.some(x => ruleMatch(R.fitRule.needs, x))) v -= R.fitRule.minus;
-  if (R.fitDiscount && g.fit && !fitJustified(R.fitDiscount)) v = Math.round(v * (1 - R.fitDiscount.rate) * 100) / 100;
   return Math.round(v * storeFactor(net) * 100) / 100;
 }
 // Précal pris en charge par le réseau (Kalixia : seulement si |S + C| ≥ 2 ou |S + C + Add| ≥ 2 sur un œil)
@@ -392,12 +391,13 @@ function offers() {
   const tint = S.opts.photo ? S.opts.tint : 'blanc';
   const precal = S.opts.precal ? (+cfg.supplements.precal || 0) : 0;
   const tintDef = cfg.tints.find(t => t.id === tint);
-  const supp = precal + (tintDef?.photo ? (+tintDef.supp || 0) : 0); // Précal + teinte Transitions, inclus dans le prix du verre
+  const tintSupp = tintDef?.photo ? +(curColor()?.supp ?? tintDef.supp) || 0 : 0; // couleur Color Touch : son propre tarif
+  const supp = precal + tintSupp; // Précal + teinte Transitions, inclus dans le prix du verre
   // verre au tarif d'un réseau qui a ses propres suppléments (ex. Actil : Précal 15 €, photochromique déjà dans le tarif)
   const suppOf = g => {
     const n = curNet();
     if (!n?.supp || !inNet(g, n)) return supp;
-    return (S.opts.precal ? (netPrecal(n) ?? (+cfg.supplements.precal || 0)) : 0) + (tintDef?.photo ? (n.supp.tint ?? (+tintDef.supp || 0)) : 0);
+    return (S.opts.precal ? (netPrecal(n) ?? (+cfg.supplements.precal || 0)) : 0) + (tintDef?.photo ? (n.supp.tint ?? tintSupp) : 0);
   };
   // Filtre lumière bleue : « Matière » = BUC/EPS exigé (option active) ou simplement autorisé (option inactive) ;
   // « Matière + traitement » ajoute le traitement filtrant. Matière décochée : verres sans BUC/EPS.
@@ -612,7 +612,7 @@ function renderFilters() {
     tog('ar', 'Anti-reflets', '', S.opts.ar
       ? `<span class="dd"><button type="button" class="dd-btn" id="arBtn">${esc(arLabel)} ▾</button>${arOpen ? `<span class="dd-pop">${shownTr.map(t => `<label><input type="checkbox" data-ar="${t.id}" ${arSel.includes(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')}<button type="button" class="link" id="arAll">Tout afficher</button></span>` : ''}</span>`
       : '<small>Choisir les traitements</small>') +
-    tog('photo', 'Transitions', '', S.opts.photo ? `<span class="sub-opts"><select id="tintSel">${photoTints.map(t => `<option value="${t.id}" ${t.id === S.opts.tint ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>${tintColors().length ? `<select id="colorSel">${tintColors().map(c => `<option ${c.name === curColor()?.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}</span>` : '<small>Verres photochromiques</small>') +
+    tog('photo', 'Transitions', '', S.opts.photo ? `<span class="sub-opts"><select id="tintSel">${photoTints.map(t => `<option value="${t.id}" ${t.id === S.opts.tint ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>${tintColors().length ? `<select id="colorSel">${tintColors().map(c => `<option value="${esc(c.name)}" ${c.name === curColor()?.name ? 'selected' : ''}>${esc(c.name)}${c.supp != null && curNet()?.supp?.tint == null ? ` · ${eur(+c.supp)} €` : ''}</option>`).join('')}</select>` : ''}</span>` : '<small>Verres photochromiques</small>') +
     tog('antifatigue', 'Anti-fatigue', '', S.opts.antifatigue
       ? `<select id="boostSel">${boostLevels().map(b => `<option value="${b}" ${b === curBoost() ? 'selected' : ''}>Boost ${b.replace('.', ',')}</option>`).join('')}</select>`
       : '<small>Eyezen Boost</small>') +
@@ -683,6 +683,8 @@ function cardHTML(o, i) {
   const feats = [];
   if (o.classA) feats.push('100 % Santé');
   if (o.net) feats.push(`Tarif ${curNet().name}`);
+  const fd = curNet()?.rules?.fitDiscount;
+  if (o.net && fd && o.g.fit && !fitJustified(fd)) feats.push(`⚠ FIT à justifier (sinon −${Math.round(fd.rate * 100)} %)`);
   if (o.g.track) feats.push('Track');
   if (o.g.fit) feats.push(v === 'fit' ? 'FIT recommandé' : 'Personnalisé FIT');
   if (o.g.antifatigue) feats.push(`Anti-fatigue${boostOf(o.g) ? ' ' + boostOf(o.g).replace('.', ',') : ''}`);

@@ -261,7 +261,12 @@
       <tbody>${c.treatments.map((t, i) => `<tr class="${t.shown === false ? 'off' : ''}"><td style="white-space:nowrap"><button class="btn small icon" data-tup="${i}">↑</button><button class="btn small icon" data-tdown="${i}">↓</button></td><td>${inp(`treatments.${i}.shown`, 'bool')}</td><td><code>${esc(t.id)}</code></td><td>${inp(`treatments.${i}.name`)}</td><td>${inp(`treatments.${i}.label`)}</td><td>${inp(`treatments.${i}.blue`, 'bool')}</td><td><button class="btn small danger" data-delt="${i}">✕</button></td></tr>`).join('')}</tbody></table></div>
     <div class="card-admin"><h3>Teintes / photochromiques</h3><p class="sub">Les colonnes du fichier tarif (Blanc, TRS, TXTR, TXPL). « Photochromique » = proposé avec l'option Transitions.</p>
       <table class="tbl"><thead><tr><th>Code</th><th>Nom affiché</th><th>Photochromique</th><th>Supplément teinte (€ / verre)</th></tr></thead>
-      <tbody>${c.tints.map((t, i) => `<tr><td><code>${esc(t.id)}</code></td><td>${inp(`tints.${i}.name`)}</td><td>${inp(`tints.${i}.photo`, 'bool')}</td><td>${t.photo ? inp(`tints.${i}.supp`, 'num', 'num') : ''}</td></tr>`).join('')}</tbody></table></div>`;
+      <tbody>${c.tints.map((t, i) => `<tr><td><code>${esc(t.id)}</code></td><td>${inp(`tints.${i}.name`)}</td><td>${inp(`tints.${i}.photo`, 'bool')}</td><td>${t.photo ? inp(`tints.${i}.supp`, 'num', 'num') : ''}</td></tr>`).join('')}</tbody></table></div>
+    ${c.tints.map((t, i) => t.photo ? `<div class="card-admin"><h3>Couleurs — ${esc(t.name)}</h3>
+      <p class="sub">Couleurs proposées dans Podium et supplément cochés dans MyEasyOptic (code et libellé du supplément). Supplément vide : celui de la teinte (${t.supp ?? '—'} €). En réseau, c'est le supplément du réseau qui s'applique.</p>
+      <table class="tbl"><thead><tr><th>Nom affiché</th><th>Code MyEasyOptic</th><th>Libellé MyEasyOptic</th><th>Supplément (€ / verre)</th><th></th></tr></thead>
+      <tbody>${(t.colors || []).map((_, j) => `<tr><td>${inp(`tints.${i}.colors.${j}.name`)}</td><td>${inp(`tints.${i}.colors.${j}.code`)}</td><td>${inp(`tints.${i}.colors.${j}.lib`)}</td><td>${inp(`tints.${i}.colors.${j}.supp`, 'num', 'num')}</td><td><button class="btn small icon" data-cdel="${i}|${j}">✕</button></td></tr>`).join('')}</tbody></table>
+      <div class="row" style="margin-top:10px"><button class="btn" data-cadd="${i}">＋ Couleur</button></div></div>` : '').join('')}`;
     bindAll($('#tabBody'), el => { if (/\.shown$/.test(el.dataset.bind)) tabMatieres(); });
     const add = (arr, base) => { const name = prompt('Nom :'); if (!name) return; let id = slug(name); while (arr.some(x => x.id === id)) id += '-2'; arr.push({ id, name, ...base }); save(); tabMatieres(); };
     $('#addM').onclick = () => add(c.materials, { index: 1.5, desc: '' });
@@ -269,6 +274,8 @@
     $$('[data-delm]').forEach(b => b.onclick = () => { if (confirm('Supprimer cette matière ?')) { c.materials.splice(+b.dataset.delm, 1); save(); tabMatieres(); } });
     $$('[data-delt]').forEach(b => b.onclick = () => { if (confirm('Supprimer ce traitement ?')) { c.treatments.splice(+b.dataset.delt, 1); save(); tabMatieres(); } });
     const mv = (i, d) => { const a = c.treatments, j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; save(); tabMatieres(); };
+    $$('[data-cadd]').forEach(b => b.onclick = () => { const t = c.tints[+b.dataset.cadd]; (t.colors = t.colors || []).push({ name: 'Nouvelle couleur', code: '', lib: '' }); save(); tabMatieres(); });
+    $$('[data-cdel]').forEach(b => b.onclick = () => { const [i, j] = b.dataset.cdel.split('|').map(Number); if (confirm('Supprimer cette couleur ?')) { c.tints[i].colors.splice(j, 1); save(); tabMatieres(); } });
     $$('[data-tup]').forEach(b => b.onclick = () => mv(+b.dataset.tup, -1));
     $$('[data-tdown]').forEach(b => b.onclick = () => mv(+b.dataset.tdown, 1));
   }
