@@ -283,6 +283,13 @@ function rulePrice(net, g, k) {
   } else {
     const p = g.prices[k], r = p && net.prices?.[netKey(g, k, p)];
     if (typeof r === 'number') v = r;
+    // Kalixia : matière que la correction ne justifie pas (autorisée seulement par la monture) facturée au prix de la matière de base
+    if (v != null && R.capToBase) {
+      const m = cfg.materials.find(x => x.id === mat);
+      const lim = Math.max(...eyes.map(x => (R.maxIndex || []).find(rr => ruleMatch(rr.when, x))?.index ?? Infinity));
+      const kb = `${R.capToBase}|${filt}|${tr}|${tint}`, pb = g.prices[kb], rb = pb && net.prices?.[netKey(g, kb, pb)];
+      if (m && m.index > lim + 1e-9 && typeof rb === 'number') v = rb;
+    }
   }
   if (v == null) return null;
   // Santéclair : au-dessous du seuil de la matière, tarif d'une matière inférieure (écart de la table) ou décote
