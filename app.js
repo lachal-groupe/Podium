@@ -50,6 +50,14 @@ function migrate(c) {
     if (!n.defaults && dn.defaults) n.defaults = clone(dn.defaults);
     if (dn.rulesVersion && dn.rulesVersion !== n.rulesVersion) Object.assign(n, { rules: clone(dn.rules), supp: clone(dn.supp || null), rulesVersion: dn.rulesVersion });
   }
+  // traitements : nouvelle version publiée (ex. Cz Kids rendu visible) -> visibilité et libellé repris
+  if ((window.PODIUM_DEFAULT.trVersion || 0) > (c.trVersion || 0)) {
+    for (const dt of window.PODIUM_DEFAULT.treatments) {
+      const t = c.treatments.find(x => x.id === dt.id);
+      if (!t) c.treatments.push(clone(dt)); else Object.assign(t, { shown: dt.shown, label: dt.label });
+    }
+    c.trVersion = window.PODIUM_DEFAULT.trVersion;
+  }
   if (!c.optionImages) c.optionImages = clone(window.PODIUM_DEFAULT.optionImages || {});
   // nouvelle version des fiches (textes du PDF Essilor, visuels) : remplace les fiches non retouchées dans les paramètres
   const fresh = (c.ficheVersion || 1) < (window.PODIUM_DEFAULT.ficheVersion || 1);
@@ -59,6 +67,7 @@ function migrate(c) {
     const dg = window.PODIUM_DEFAULT.gammes.find(x => x.id === g.id); if (!dg) continue;
     if (g.keywords === undefined) g.keywords = dg.keywords || '';
     if (dg.fitAuto && !g.fit) g.fit = true; // gammes individualisées d'office (Varilux S2, Physio 3D)
+    if (g.track && !g.fit) g.fit = true;     // un verre Track est toujours FIT
     if (!g.base && dg.base) g.base = dg.base;
     if (g.fiche && !g.fiche.images) g.fiche.images = clone(dg.fiche?.images || []);
     for (const [k, p] of Object.entries(g.prices)) if (!p.lab && dg.prices[k]?.lab) p.lab = dg.prices[k].lab;
@@ -86,7 +95,7 @@ const blankClient = () => ({
   step: 1, rx: { od: {}, og: {} }, mes: defaultMes(), alt: 'dvo', mixed: false,
   frame: { type: cfg.frames[0]?.id, price: null }, mode: 'auto',
   // blueMat coché par défaut : les verres BUC / EPS sont présentés ; décoché : uniquement les verres sans BUC / EPS
-  opts: { precal: false, blue: false, blueMat: true, blueTr: false, ar: false, arSel: [], photo: false, tint: 'trs', color: null, antifatigue: false, boost: null, panierA: false, noFit: false, showFit: false },
+  opts: { precal: false, blue: false, blueMat: true, blueTr: false, ar: false, arSel: [], photo: false, tint: 'trs', color: null, antifatigue: false, boost: null, panierA: false, noFit: false, noTrack: false, showFit: false },
   material: 'auto', pos: 0, selected: null, network: null,
 });
 let S;
@@ -205,13 +214,14 @@ function classify(m, v) {
 const isDefault = m => m.default != null && num(S.mes[m.id]) === m.default;
 function fitVerdict() {
   const ms = visibleMes().filter(m => !m.track && num(S.mes[m.id]) != null);
-  if (!ms.some(m => !isDefault(m))) return null; // seules des valeurs par défaut : pas d'avis
-  const st = ms.map(m => classify(m, num(S.mes[m.id])));
+  const st = ms.some(m => !isDefault(m)) ? ms.map(m => classify(m, num(S.mes[m.id]))) : []; // seules des valeurs par défaut : pas d'avis
   if (st.includes('err')) return 'err';
-  if (st.includes('fit')) return 'fit';
-  return 'useless';
+  if (st.includes('fit') || cvpSet()) return 'fit'; // CVP renseigné : un verre Track est FIT ; Track décoché -> verres FIT
+  return st.length ? 'useless' : null;
 }
-const trackOnly = () => cfg.fit.some(m => m.track && num(S.mes[m.id]) != null);
+// CVP renseigné : verres Track proposés d'office ; curseur « Track » pour revenir aux verres FIT (puis « Non FIT » aux classiques)
+const cvpSet = () => cfg.fit.some(m => m.track && num(S.mes[m.id]) != null);
+const trackOnly = () => cvpSet() && !S.opts.noTrack;
 
 // Clé de prix : matière | filtre (buc, eps ou vide) | traitement | teinte
 function priceOf(g, mat, filt, tr, tint) {
@@ -632,6 +642,7 @@ function renderFilters() {
       : '<small>Eyezen Boost</small>') +
     tog('panierA', 'Panier A', '100 % Santé') +
     // FIT recommandé : l'opticien peut sortir de la préconisation et proposer des verres standard
+    (cvpSet() ? `<div class="tog ${!S.opts.noTrack ? 'on' : ''} ${S.opts.panierA ? 'locked' : ''}" data-opt="noTrack" role="switch" aria-checked="${!S.opts.noTrack}" tabindex="0"><span class="sw"></span><span>Track<br><small>CVP renseigné : verres Track</small></span></div>` : '') +
     (fitVerdict() === 'fit' && !trackOnly() && !curNet() ? tog('noFit', 'Non FIT', 'Ignorer la préconisation FIT') : '') +
     // en réseau, la recommandation FIT est seulement indiquée
     (fitVerdict() == null && !trackOnly() ? (curNet() ? '' : tog('showFit', 'Verres FIT', 'Afficher les verres FIT à la place')) + '<span class="pill fit-miss">⚠ Valeur FIT manquante</span>' : '') +
@@ -929,6 +940,7 @@ function renderMini() {
     else if (!o.blueMat) chips.push('Sans matière filtrante');
     if (o.ar) chips.push(`Anti-reflets : ${o.arSel.length ? o.arSel.map(id => cfg.treatments.find(t => t.id === id)?.name).filter(Boolean).join(', ') : 'tous'}`);
     if (o.photo) chips.push(cfg.tints.find(t => t.id === o.tint)?.name || 'Transitions');
+    if (cvpSet()) chips.push(o.noTrack ? 'Track non retenu' : 'Track');
     if (o.noFit && fitVerdict() === 'fit' && !trackOnly() && !curNet()) chips.push('Non FIT');
     if (fitVerdict() == null && !trackOnly()) chips.push(o.showFit && !curNet() ? 'Valeur FIT manquante · verres FIT seulement' : '⚠ Valeur FIT manquante');
     if (fitVerdict() === 'fit' && !trackOnly() && curNet()) chips.push('Verres FIT recommandés');
@@ -1160,7 +1172,7 @@ function bindMain() {
     const t = e.target.closest('[data-opt]'); if (!t || t.classList.contains('locked')) return;
     S.opts[t.dataset.opt] = !S.opts[t.dataset.opt];
     if (t.dataset.opt === 'ar') arOpen = S.opts.ar;
-    if (t.dataset.opt === 'noFit' || t.dataset.opt === 'panierA') renderRecap();
+    if (t.dataset.opt === 'noFit' || t.dataset.opt === 'noTrack' || t.dataset.opt === 'panierA') renderRecap();
     S.pos = 0; renderFilters(); renderPodium();
   });
   document.addEventListener('click', e => {
