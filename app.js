@@ -220,7 +220,7 @@ function fitVerdict() {
   return st.length ? 'useless' : null;
 }
 // CVP renseigné : verres Track proposés d'office ; curseur « Track » pour revenir aux verres FIT (puis « Non FIT » aux classiques)
-const cvpSet = () => cfg.fit.some(m => m.track && num(S.mes[m.id]) != null);
+const cvpSet = () => cfg.fit.some(m => m.track && String(S.mes[m.id] ?? '').trim() !== ''); // code CVP : texte (ex. LP12345)
 const trackOnly = () => cvpSet() && !S.opts.noTrack;
 
 // Clé de prix : matière | filtre (buc, eps ou vide) | traitement | teinte
@@ -515,7 +515,7 @@ function buildMesures() {
   $$('#altSeg button').forEach(b => b.classList.toggle('on', b.dataset.alt === S.alt));
   $('#mesGrid').innerHTML = visibleMes().map(m => `<div class="mfield">
     <span class="mlabel">${esc(m.name)}${m.unit ? ` (${esc(m.unit)})` : ''}</span>
-    <input data-mes="${m.id}" inputmode="decimal" placeholder="—" value="${esc(S.mes[m.id] ?? '')}">
+    <input data-mes="${m.id}" inputmode="${m.track ? 'text' : 'decimal'}" placeholder="—" value="${esc(S.mes[m.id] ?? '')}">
     <span class="mstate" data-state="${m.id}">—</span></div>`).join('');
 }
 function buildNetSeg() {
@@ -548,7 +548,7 @@ function buildFrameSeg() {
 function renderEntry() {
   const labels = { fit: 'FIT', useless: 'Standard', err: 'À vérifier', track: 'Track' };
   for (const m of visibleMes()) {
-    const st = isDefault(m) ? null : classify(m, num(S.mes[m.id]));
+    const st = m.track ? (String(S.mes[m.id] ?? '').trim() ? 'track' : null) : isDefault(m) ? null : classify(m, num(S.mes[m.id]));
     const inp = $(`[data-mes="${m.id}"]`), pill = $(`[data-state="${m.id}"]`);
     if (!inp) continue;
     inp.className = st || '';
