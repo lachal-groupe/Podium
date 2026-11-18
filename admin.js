@@ -480,14 +480,16 @@
       <p class="sub">Le magasin est reconnu grâce au nom affiché sous le logo MyEasyOptic (colonne « Nom MyEasyOptic ») ou au code client MyEasyOptic.
         Il fixe la remise appliquée aux grilles ${disc.map(n => esc(n.name)).join(', ') || '—'}. Case vide : pas de remise (tarif brut).
         Poste actuel : <b>${esc(cur.magasin || 'non identifié')}</b>${cur.codeClient ? ' · code client ' + esc(cur.codeClient) : ''} → ${found ? '<b>' + esc(found.name) + '</b>' : '<span style="color:#b3261e">aucun magasin correspondant</span>'}.</p>
-      <div class="scroll-x"><table class="tbl"><thead><tr><th>Magasin</th><th>Nom MyEasyOptic</th><th>Code Meo</th><th>Code client MyEasyOptic</th>${disc.map(n => `<th>Remise ${esc(n.name)} (%)</th>`).join('')}<th></th></tr></thead>
-      <tbody>${c.stores.map((s, i) => `<tr><td>${inp(`stores.${i}.name`)}</td><td>${inp(`stores.${i}.meo`)}</td><td>${inp(`stores.${i}.code`)}</td><td>${inp(`stores.${i}.codeClient`)}</td>
+      <div class="scroll-x"><table class="tbl"><thead><tr><th>Magasin</th><th>Nom MyEasyOptic</th><th>Code Meo</th><th>Code client MyEasyOptic</th><th title="Magasin équipé pour distribuer les verres Track (mesure CVP)">Équipé Track</th>${disc.map(n => `<th>Remise ${esc(n.name)} (%)</th>`).join('')}<th></th></tr></thead>
+      <tbody>${c.stores.map((s, i) => `<tr><td>${inp(`stores.${i}.name`)}</td><td>${inp(`stores.${i}.meo`)}</td><td>${inp(`stores.${i}.code`)}</td><td>${inp(`stores.${i}.codeClient`)}</td><td style="text-align:center">${inp(`stores.${i}.track`, 'bool')}</td>
         ${disc.map(n => `<td><input type="text" inputmode="numeric" data-disc="${i}|${n.id}" value="${s.discounts?.[n.id] ?? ''}" style="max-width:80px"></td>`).join('')}
         <td><button class="btn small icon" data-sdel="${i}">✕</button></td></tr>`).join('')}</tbody></table></div>
-      <div class="row" style="margin-top:10px"><button class="btn" id="sAdd">＋ Magasin</button></div></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="sAdd">＋ Magasin</button></div>
+      <p class="sub" style="margin-top:12px"><b>Magasins équipés Track (${c.stores.filter(s => s.track).length})</b> : ${c.stores.filter(s => s.track).map(s => esc(s.name)).join(' · ') || 'aucun'}</p></div>
     <div class="card-admin"><h3>Suivi d'utilisation</h3>
       <p class="sub">À chaque envoi dans MyEasyOptic, Podium ajoute une ligne dans votre tableur Google Sheets :
-        date · magasin · technicien · client · mesures FIT renseignées (oui si au moins 3 champs) · produit choisi · montant total · réseau.
+        date · magasin · technicien · client · mesures FIT renseignées (oui si au moins 3 champs) · produit choisi · montant total · réseau,
+        puis le détail de l'équipement (gamme, FIT, Track et CVP, matière, options, rang sur le podium, prix, mutuelle, magasin équipé Track). L'onglet « Tableau de bord » du tableur en fait la synthèse.
         Mode d'emploi : fichier « Suivi Podium - mode d'emploi.txt » dans PODIUM › outils.</p>
       <div class="stack"><label>Adresse de l'application Apps Script (se termine par /exec)${inp('stats.url')}</label>
         <label>Code de contrôle (identique à celui du script)${inp('stats.token')}</label></div>

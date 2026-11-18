@@ -35,6 +35,7 @@ function migrate(c) {
   for (const f of c.frames || []) { const df = window.PODIUM_DEFAULT.frames?.find(x => x.id === f.id); if (f.ok === undefined && df?.ok) f.ok = clone(df.ok); }
   if (!c.netClasses) c.netClasses = clone(window.PODIUM_DEFAULT.netClasses || []);
   if (!c.stores) c.stores = clone(window.PODIUM_DEFAULT.stores || []);
+  for (const st of c.stores) { const ds = window.PODIUM_DEFAULT.stores?.find(x => x.name === st.name); if (st.track === undefined && ds?.track !== undefined) st.track = ds.track; }
   if (!c.stats) c.stats = clone(window.PODIUM_DEFAULT.stats || { url: '', token: '' });
   if (!c.noNetwork) c.noNetwork = clone(window.PODIUM_DEFAULT.noNetwork || { treatments: [], defaults: {} });
   // grilles relevées dans MyEasyOptic : un relevé plus récent remplace verres et tarifs de la copie locale
@@ -946,6 +947,7 @@ function statDetails(o, frame, prism) {
     puissanceMax: p == null ? '' : fr(p),
     addition: add || '',
     extension: S.ctx?.version || '',
+    magasinTrack: yn(storeOf()?.track),
   };
 }
 function logStat(o, l) {
