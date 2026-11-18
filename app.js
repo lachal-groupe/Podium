@@ -908,6 +908,44 @@ function statRow(o, l) {
     produit: l.od.lab + (l.og.lab !== l.od.lab ? ' / ' + l.og.lab : ''),
     montant: Math.round((frame + (o.pair || 0) + prism) * 100) / 100,
     reseau: curNet()?.name || 'Hors réseau',
+    // détails pour les statistiques (colonnes ajoutées à la suite)
+    ...statDetails(o, frame, prism),
+  };
+}
+// Détail de l'équipement choisi : ce qui a été proposé, ce qui a été retenu
+function statDetails(o, frame, prism) {
+  const yn = v => v ? 'oui' : 'non', fr = n => (Math.round(n * 100) / 100);
+  const v = fitVerdict(), tint = cfg.tints.find(t => t.id === o.tint), fn = frameNet();
+  const rank = current.findIndex(x => x.key === o.key);
+  const rec = matsSorted().find(m => m.index >= recommendedIndex());
+  const p = strongest(), add = Math.max(addOf('od'), addOf('og'));
+  return {
+    equipement: o.classA ? 'Panier A' : isMixed() ? 'Mixte (progressif + unifocal)' : isProg() ? 'Progressif' : 'Unifocal',
+    gamme: o.g?.name || '',
+    cvp: yn(cvpSet()),
+    verreTrack: yn(o.g?.track),
+    verreFit: yn(o.g?.fit),
+    precoFit: cvpSet() ? (S.opts.noTrack ? 'Track non retenu' : 'Track') : v === 'fit' ? (S.opts.noFit ? 'FIT recommandé, non retenu' : 'FIT recommandé') : v === 'useless' ? 'Standard' : v === 'err' ? 'Mesure à vérifier' : 'Non renseigné',
+    matiere: o.mat ? `${o.mat.name} ${o.mat.index}` : '',
+    matiereConseillee: rec ? `${rec.name} ${rec.index}` : '',
+    matiereChoix: S.material === 'auto' ? 'Conseillée' : "Choisie par l'opticien",
+    traitement: o.tr?.name || '',
+    lumiereBleue: o.filt ? filtName(o.filt) : (o.tr?.blue ? 'Traitement' : 'non'),
+    transitions: tint?.photo ? `${tint.name}${curColor() ? ' ' + curColor().name : ''}` : 'non',
+    precal: yn(o.precal),
+    prisme: yn(prism > 0),
+    antiFatigue: S.opts.antifatigue ? `Boost ${curBoost() || ''}`.trim() : 'non',
+    rangPodium: rank >= 0 ? rank + 1 : '',
+    nbPropositions: current.length,
+    prixVerres: fr(o.pair || 0),
+    prixMonture: fn.gross ?? '',
+    remiseMonture: fn.remise || 0,
+    typeMonture: frameDef()?.name || '',
+    montureClasseA: yn(isClassAFrame()),
+    mutuelle: S.ctx?.mutuelle || (S.ctx?.sansMutuelle ? 'aucune' : ''),
+    puissanceMax: p == null ? '' : fr(p),
+    addition: add || '',
+    extension: S.ctx?.version || '',
   };
 }
 function logStat(o, l) {
